@@ -1,21 +1,24 @@
 
-import { Server } from 'socket.io';
+import { Server, Socket } from 'socket.io';
 import { Server as HTTPServer } from 'http';
 import jwt from 'jsonwebtoken';
 import { db } from './db';
 import { users } from '../shared/schema';
 import { eq } from 'drizzle-orm';
+import { OrderStatus, OrderTrackingData } from '../shared/types/order';
 
 const JWT_SECRET = process.env.JWT_SECRET || 'your-secret-key';
 
 interface AuthenticatedSocket extends Socket {
   userId?: string;
   userRole?: string;
+  orderSubscriptions?: Set<string>; // Track which orders this client is subscribed to
 }
 
 export class WebSocketService {
   private io: Server;
   private connections: Map<string, AuthenticatedSocket> = new Map();
+  private orderSubscriptions: Map<string, Set<string>> = new Map(); // orderId -> Set of socketIds
 
   constructor(httpServer: HTTPServer) {
     this.io = new Server(httpServer, {
@@ -60,11 +63,67 @@ export class WebSocketService {
 
   private setupEventHandlers() {
     this.io.on('connection', (socket: AuthenticatedSocket) => {
+      const socketId = socket.id;
+      this.connections.set(socketId, socket);
+      socket.orderSubscriptions = new Set();
+
+      socket.on('disconnect', () => {
+        this.handleDisconnect(socketId);
+      });
+
+      // Handle authentication
+      socket.on('authenticate', async (token: string) => {
+        try {
+          const decoded = jwt.verify(token, JWT_SECRET) as any;
+          const [user] = await db.select()
+            .from(users)
+            .where(eq(users.id, decoded.userId))
+            .limit(1);
+
+          if (!user) {
+            socket.emit('auth_error', 'User not found');
+            return;
+          }
+
+          socket.userId = user.id;
+          socket.userRole = user.role;
+          this.connections.set(socketId, socket);
+          socket.emit('authenticated', { userId: user.id, role: user.role });
+        } catch (error) {
+          console.error('Authentication error:', error);
+          socket.emit('auth_error', 'Invalid token');
+        }
+      });
+
+      // Handle order subscription
+      socket.on('subscribe_order', (orderId: string) => {
+        if (!socket.userId) {
+          socket.emit('error', 'Not authenticated');
+          return;
+        }
+        this.subscribeToOrder(socketId, orderId);
+      });
+
+      // Handle order unsubscription
+      socket.on('unsubscribe_order', (orderId: string) => {
+        this.unsubscribeFromOrder(socketId, orderId);
+      });
+
+      // Handle location updates from delivery partners
+      socket.on('update_location', (data: { orderId: string; location: { lat: number; lng: number } }) => {
+        if (!socket.userId) {
+          socket.emit('error', 'Not authenticated');
+          return;
+        }
+        this.broadcastToOrderSubscribers(data.orderId, 'location_update', {
+          orderId: data.orderId,
+          location: data.location,
+          updatedAt: new Date().toISOString()
+        });
+      });
+
       console.log(`User ${socket.userId} connected`);
       
-      // Store connection
-      this.connections.set(socket.userId!, socket);
-
       // Join user-specific room
       socket.join(`user_${socket.userId}`);
       
@@ -197,16 +256,70 @@ export class WebSocketService {
     });
   }
 
+  private handleDisconnect(socketId: string) {
+    const socket = this.connections.get(socketId);
+    if (socket) {
+      // Clean up any order subscriptions
+      if (socket.orderSubscriptions) {
+        socket.orderSubscriptions.forEach(orderId => {
+          this.unsubscribeFromOrder(socketId, orderId);
+        });
+      }
+      this.connections.delete(socketId);
+    }
+  }
+
+  private subscribeToOrder(socketId: string, orderId: string) {
+    const socket = this.connections.get(socketId);
+    if (!socket) return;
+
+    if (!this.orderSubscriptions.has(orderId)) {
+      this.orderSubscriptions.set(orderId, new Set());
+    }
+
+    this.orderSubscriptions.get(orderId)?.add(socketId);
+    socket.orderSubscriptions?.add(orderId);
+  }
+
+  private unsubscribeFromOrder(socketId: string, orderId: string) {
+    const socket = this.connections.get(socketId);
+    if (socket?.orderSubscriptions) {
+      socket.orderSubscriptions.delete(orderId);
+    }
+
+    const subscribers = this.orderSubscriptions.get(orderId);
+    if (subscribers) {
+      subscribers.delete(socketId);
+      if (subscribers.size === 0) {
+        this.orderSubscriptions.delete(orderId);
+      }
+    }
+  }
+
+  private broadcastToOrderSubscribers(orderId: string, event: string, data: any) {
+    const subscribers = this.orderSubscriptions.get(orderId);
+    if (!subscribers) return;
+
+    subscribers.forEach(socketId => {
+      const socket = this.connections.get(socketId);
+      socket?.emit(event, data);
+    });
+  }
+
   // Public methods for broadcasting
   public broadcastUpdate(room: string, data: any) {
     this.io.to(room).emit('update', data);
   }
 
-  public sendToUser(userId: string, event: string, data: any) {
+  public sendToUser(userId: string, data: { type: string; data: any }) {
     const socket = this.connections.get(userId);
     if (socket) {
-      socket.emit(event, data);
+      socket.emit(data.type, data.data);
     }
+  }
+
+  public notifyOrderUpdate(orderId: string, data: any) {
+    this.broadcastToOrderSubscribers(orderId, 'order:update', data);
   }
 
   public broadcastToRole(role: string, event: string, data: any) {

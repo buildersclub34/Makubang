@@ -1,7 +1,90 @@
-import { pgTable, text, integer, timestamp, boolean, decimal, jsonb, index, primaryKey } from 'drizzle-orm/pg-core';
+import { pgTable, text, integer, timestamp, boolean, decimal, jsonb, index, primaryKey, pgEnum } from 'drizzle-orm/pg-core';
 import { relations } from 'drizzle-orm';
 
 // Users table
+// Enums
+export const paymentStatus = pgEnum('payment_status', ['pending', 'succeeded', 'failed', 'refunded']);
+export const paymentMethod = pgEnum('payment_method', ['razorpay', 'cod', 'other']);
+
+// Payment table
+export const payments = pgTable('payments', {
+  id: text('id').primaryKey(),
+  orderId: text('order_id').notNull(),
+  userId: text('user_id').references(() => users.id).notNull(),
+  amount: decimal('amount', { precision: 10, scale: 2 }).notNull(),
+  currency: text('currency').default('INR'),
+  status: paymentStatus('status').default('pending'),
+  paymentMethod: paymentMethod('payment_method').notNull(),
+  externalPaymentId: text('external_payment_id'),
+  metadata: jsonb('metadata'),
+  createdAt: timestamp('created_at').notNull(),
+  updatedAt: timestamp('updated_at'),
+}, (table) => ({
+  orderIdIdx: index('payments_order_id_idx').on(table.orderId),
+  userIdIdx: index('payments_user_id_idx').on(table.userId),
+}));
+
+// Subscription plans
+export const subscriptionPlans = pgTable('subscription_plans', {
+  id: text('id').primaryKey(),
+  name: text('name').notNull(),
+  description: text('description'),
+  price: decimal('price', { precision: 10, scale: 2 }).notNull(),
+  currency: text('currency').default('INR'),
+  durationDays: integer('duration_days').notNull(),
+  maxOrders: integer('max_orders'),
+  features: jsonb('features'),
+  isActive: boolean('is_active').default(true),
+  createdAt: timestamp('created_at').notNull(),
+  updatedAt: timestamp('updated_at'),
+});
+
+// Restaurant subscriptions
+export const restaurantSubscriptions = pgTable('restaurant_subscriptions', {
+  id: text('id').primaryKey(),
+  restaurantId: text('restaurant_id').references(() => restaurants.id).notNull(),
+  planId: text('plan_id').references(() => subscriptionPlans.id).notNull(),
+  status: text('status').notNull().default('active'),
+  startDate: timestamp('start_date').notNull(),
+  endDate: timestamp('end_date').notNull(),
+  paymentId: text('payment_id').references(() => payments.id),
+  orderLimit: integer('order_limit'),
+  orderCount: integer('order_count').default(0),
+  metadata: jsonb('metadata'),
+  createdAt: timestamp('created_at').notNull(),
+  updatedAt: timestamp('updated_at'),
+}, (table) => ({
+  restaurantIdIdx: index('restaurant_subscriptions_restaurant_id_idx').on(table.restaurantId),
+  planIdIdx: index('restaurant_subscriptions_plan_id_idx').on(table.planId),
+}));
+
+// Email verifications table
+export const emailVerifications = pgTable('email_verifications', {
+  id: text('id').primaryKey(),
+  email: text('email').notNull(),
+  token: text('token').notNull(),
+  expiresAt: timestamp('expires_at').notNull(),
+  createdAt: timestamp('created_at').notNull().defaultNow(),
+  updatedAt: timestamp('updated_at'),
+}, (table) => ({
+  emailIdx: index('email_verifications_email_idx').on(table.email),
+  tokenIdx: index('email_verifications_token_idx').on(table.token),
+}));
+
+// Password reset tokens
+export const passwordResetTokens = pgTable('password_reset_tokens', {
+  id: text('id').primaryKey(),
+  email: text('email').notNull(),
+  token: text('token').notNull(),
+  expiresAt: timestamp('expires_at').notNull(),
+  used: boolean('used').default(false),
+  createdAt: timestamp('created_at').notNull().defaultNow(),
+  updatedAt: timestamp('updated_at'),
+}, (table) => ({
+  emailIdx: index('password_reset_tokens_email_idx').on(table.email),
+  tokenIdx: index('password_reset_tokens_token_idx').on(table.token),
+}));
+
 export const users = pgTable('users', {
   id: text('id').primaryKey(),
   email: text('email').notNull().unique(),

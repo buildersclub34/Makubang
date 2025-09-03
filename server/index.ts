@@ -1,9 +1,14 @@
 
 import express, { type Request, Response, NextFunction } from "express";
 import { createServer } from "http";
+import cors from "cors";
+import dotenv from "dotenv";
 import { registerRoutes } from "./routes";
 import { setupVite, serveStatic, log } from "./vite";
 import { WebSocketService } from "./websocket";
+
+// Load environment variables
+dotenv.config();
 
 const app = express();
 const httpServer = createServer(app);
@@ -11,11 +16,35 @@ const httpServer = createServer(app);
 // Initialize WebSocket service
 const wsService = new WebSocketService(httpServer);
 
+// Middleware
 app.use(express.json());
 app.use(express.urlencoded({ extended: false }));
 
+// Enable CORS
+app.use(cors({
+  origin: process.env.CORS_ORIGIN || 'http://localhost:3000',
+  credentials: true
+}));
+
+// Request logging middleware
+app.use((req, res, next) => {
+  log(`${req.method} ${req.originalUrl}`);
+  next();
+});
+
 // Make WebSocket service available to routes
 app.locals.wsService = wsService;
+
+// Add error handling for unhandled promise rejections
+process.on('unhandledRejection', (reason, promise) => {
+  console.error('Unhandled Rejection at:', promise, 'reason:', reason);
+});
+
+// Add error handling for uncaught exceptions
+process.on('uncaughtException', (error) => {
+  console.error('Uncaught Exception:', error);
+  process.exit(1);
+});
 
 app.use((req, res, next) => {
   const start = Date.now();
