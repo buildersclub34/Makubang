@@ -1,10 +1,21 @@
+
 import express, { type Request, Response, NextFunction } from "express";
+import { createServer } from "http";
 import { registerRoutes } from "./routes";
 import { setupVite, serveStatic, log } from "./vite";
+import { WebSocketService } from "./websocket";
 
 const app = express();
+const httpServer = createServer(app);
+
+// Initialize WebSocket service
+const wsService = new WebSocketService(httpServer);
+
 app.use(express.json());
 app.use(express.urlencoded({ extended: false }));
+
+// Make WebSocket service available to routes
+app.locals.wsService = wsService;
 
 app.use((req, res, next) => {
   const start = Date.now();
@@ -51,7 +62,7 @@ app.use((req, res, next) => {
   // setting up all the other routes so the catch-all route
   // doesn't interfere with the other routes
   if (app.get("env") === "development") {
-    await setupVite(app, server);
+    await setupVite(app, httpServer);
   } else {
     serveStatic(app);
   }
@@ -61,7 +72,7 @@ app.use((req, res, next) => {
   // this serves both the API and the client.
   // It is the only port that is not firewalled.
   const port = parseInt(process.env.PORT || '5000', 10);
-  server.listen({
+  httpServer.listen({
     port,
     host: "0.0.0.0",
     reusePort: true,
