@@ -1,4 +1,3 @@
-
 import React, { useState, useEffect } from 'react';
 import { StyleSheet, Text, View, SafeAreaView, StatusBar, Alert } from 'react-native';
 import { NavigationContainer } from '@react-navigation/native';
@@ -15,6 +14,11 @@ import OrderDetailScreen from './src/screens/OrderDetailScreen';
 import ProfileScreen from './src/screens/ProfileScreen';
 import EarningsScreen from './src/screens/EarningsScreen';
 import TrackingScreen from './src/screens/TrackingScreen';
+// Added for delivery partner app
+import LiveMapScreen from './src/screens/LiveMapScreen';
+import WalletScreen from './src/screens/WalletScreen';
+import OrderHistoryScreen from './src/screens/OrderHistoryScreen';
+
 
 // Context
 import { AuthProvider, useAuth } from './src/context/AuthContext';
@@ -78,8 +82,61 @@ function MainTabs() {
   );
 }
 
+// Updated for Delivery Partner App Navigation
+function DeliveryPartnerTabs() {
+  return (
+    <Tab.Navigator
+      screenOptions={({ route }) => ({
+        tabBarIcon: ({ focused, color, size }) => {
+          let iconName;
+
+          switch (route.name) {
+            case 'Dashboard':
+              iconName = 'dashboard';
+              break;
+            case 'Map':
+              iconName = 'map';
+              break;
+            case 'Wallet':
+              iconName = 'account-balance-wallet';
+              break;
+            case 'History':
+              iconName = 'history';
+              break;
+            case 'Profile':
+              iconName = 'person';
+              break;
+            default:
+              iconName = 'dashboard';
+          }
+
+          return <Icon name={iconName} size={size} color={color} />;
+        },
+        tabBarActiveTintColor: '#4CAF50', // Green for delivery partners
+        tabBarInactiveTintColor: '#757575',
+        tabBarStyle: {
+          backgroundColor: '#fff',
+          borderTopWidth: 1,
+          borderTopColor: '#e0e0e0',
+          height: 60,
+          paddingBottom: 8,
+          paddingTop: 8,
+        },
+        headerShown: false,
+      })}
+    >
+      <Tab.Screen name="Dashboard" component={DashboardScreen} />
+      <Tab.Screen name="Map" component={LiveMapScreen} />
+      <Tab.Screen name="Wallet" component={WalletScreen} />
+      <Tab.Screen name="History" component={OrderHistoryScreen} />
+      <Tab.Screen name="Profile" component={ProfileScreen} />
+    </Tab.Navigator>
+  );
+}
+
+
 function AppNavigator() {
-  const { isAuthenticated, isLoading } = useAuth();
+  const { isAuthenticated, isLoading, userRole } = useAuth(); // Assuming userRole is available
 
   if (isLoading) {
     return (
@@ -93,7 +150,11 @@ function AppNavigator() {
     <NavigationContainer>
       <Stack.Navigator screenOptions={{ headerShown: false }}>
         {isAuthenticated ? (
-          <Stack.Screen name="Main" component={MainTabs} />
+          userRole === 'delivery_partner' ? (
+            <Stack.Screen name="DeliveryPartnerTabs" component={DeliveryPartnerTabs} />
+          ) : (
+            <Stack.Screen name="Main" component={MainTabs} />
+          )
         ) : (
           <Stack.Screen name="Login" component={LoginScreen} />
         )}

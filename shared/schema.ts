@@ -287,8 +287,119 @@ export const deliveryEarningsRelations = relations(deliveryEarnings, ({ one }) =
   order: one(orders, { fields: [deliveryEarnings.orderId], references: [orders.id] }),
 }));
 
+// Delivery Partner Wallet table
+export const deliveryWallet = pgTable("delivery_wallet", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  deliveryPartnerId: uuid("delivery_partner_id").references(() => deliveryPartners.id),
+  availableBalance: decimal("available_balance", { precision: 10, scale: 2 }).default("0"),
+  pendingBalance: decimal("pending_balance", { precision: 10, scale: 2 }).default("0"),
+  totalEarned: decimal("total_earned", { precision: 10, scale: 2 }).default("0"),
+  totalWithdrawn: decimal("total_withdrawn", { precision: 10, scale: 2 }).default("0"),
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow(),
+});
+
+// Wallet Transactions table
+export const walletTransactions = pgTable("wallet_transactions", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  deliveryPartnerId: uuid("delivery_partner_id").references(() => deliveryPartners.id),
+  type: varchar("type").notNull(), // earning, withdrawal, bonus, penalty, adjustment
+  amount: decimal("amount", { precision: 8, scale: 2 }).notNull(),
+  description: text("description").notNull(),
+  status: varchar("status").default("completed"), // pending, completed, failed
+  referenceId: uuid("reference_id"), // orderId, withdrawalId, etc.
+  metadata: jsonb("metadata"), // additional transaction details
+  createdAt: timestamp("created_at").defaultNow(),
+});
+
+// Withdrawal Methods table
+export const withdrawalMethods = pgTable("withdrawal_methods", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  deliveryPartnerId: uuid("delivery_partner_id").references(() => deliveryPartners.id),
+  type: varchar("type").notNull(), // bank, upi, paytm, phonepe
+  details: jsonb("details").notNull(), // account details, UPI ID, etc.
+  isDefault: boolean("is_default").default(false),
+  isVerified: boolean("is_verified").default(false),
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow(),
+});
+
+// Withdrawal Requests table
+export const withdrawalRequests = pgTable("withdrawal_requests", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  deliveryPartnerId: uuid("delivery_partner_id").references(() => deliveryPartners.id),
+  methodId: uuid("method_id").references(() => withdrawalMethods.id),
+  amount: decimal("amount", { precision: 8, scale: 2 }).notNull(),
+  status: varchar("status").default("pending"), // pending, approved, rejected, completed
+  adminNotes: text("admin_notes"),
+  processedAt: timestamp("processed_at"),
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow(),
+});
+
+// Order Items table
+export const orderItems = pgTable("order_items", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  orderId: uuid("order_id").references(() => orders.id),
+  menuItemId: uuid("menu_item_id").references(() => menuItems.id),
+  quantity: integer("quantity").notNull(),
+  unitPrice: decimal("unit_price", { precision: 8, scale: 2 }).notNull(),
+  totalPrice: decimal("total_price", { precision: 8, scale: 2 }).notNull(),
+  customizations: jsonb("customizations"), // special requests, modifications
+  createdAt: timestamp("created_at").defaultNow(),
+});
+
+// Notifications table
+export const notifications = pgTable("notifications", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  userId: varchar("user_id").references(() => users.id),
+  deliveryPartnerId: uuid("delivery_partner_id").references(() => deliveryPartners.id),
+  type: varchar("type").notNull(), // order_update, payment, promotion, system
+  title: varchar("title").notNull(),
+  message: text("message").notNull(),
+  data: jsonb("data"), // additional notification data
+  isRead: boolean("is_read").default(false),
+  priority: varchar("priority").default("normal"), // low, normal, high, urgent
+  expiresAt: timestamp("expires_at"),
+  createdAt: timestamp("created_at").defaultNow(),
+});
+
+// Support Tickets table
+export const supportTickets = pgTable("support_tickets", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  userId: varchar("user_id").references(() => users.id),
+  deliveryPartnerId: uuid("delivery_partner_id").references(() => deliveryPartners.id),
+  subject: varchar("subject").notNull(),
+  description: text("description").notNull(),
+  priority: varchar("priority").default("medium"), // low, medium, high, urgent
+  status: varchar("status").default("open"), // open, in_progress, resolved, closed
+  category: varchar("category").notNull(), // technical, payment, account, delivery
+  assignedTo: varchar("assigned_to"),
+  adminNotes: text("admin_notes"),
+  resolution: text("resolution"),
+  resolvedAt: timestamp("resolved_at"),
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow(),
+});
+
+// Analytics Events table
+export const analyticsEvents = pgTable("analytics_events", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  eventType: varchar("event_type").notNull(),
+  userId: varchar("user_id").references(() => users.id),
+  sessionId: varchar("session_id"),
+  videoId: uuid("video_id").references(() => videos.id),
+  orderId: uuid("order_id").references(() => orders.id),
+  restaurantId: uuid("restaurant_id").references(() => restaurants.id),
+  deliveryPartnerId: uuid("delivery_partner_id").references(() => deliveryPartners.id),
+  properties: jsonb("properties"), // event-specific data
+  timestamp: timestamp("timestamp").defaultNow(),
+  userAgent: text("user_agent"),
+  ipAddress: varchar("ip_address"),
+  location: jsonb("location"), // lat, lng, city, country
+});
+
 // Insert schemas
-export const insertUserSchema = createInsertSchema(users).omit({ id: true, createdAt: true, updatedAt: true });
 export const insertRestaurantSchema = createInsertSchema(restaurants).omit({ id: true, createdAt: true, updatedAt: true });
 export const insertVideoSchema = createInsertSchema(videos).omit({ id: true, createdAt: true, updatedAt: true });
 export const insertOrderSchema = createInsertSchema(orders).omit({ id: true, createdAt: true, updatedAt: true });

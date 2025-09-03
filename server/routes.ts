@@ -596,6 +596,144 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // Delivery Partner Wallet Routes
+  app.get('/api/delivery-partners/me/wallet', isAuthenticated, async (req: any, res) => {
+    try {
+      const userId = req.user.claims.sub;
+      const partner = await storage.getDeliveryPartnerByUser(userId);
+      if (!partner) {
+        return res.status(404).json({ message: "Delivery partner not found" });
+      }
+
+      const walletData = await storage.getDeliveryPartnerWallet(partner.id);
+      res.json(walletData);
+    } catch (error) {
+      console.error("Error fetching wallet data:", error);
+      res.status(500).json({ message: "Failed to fetch wallet data" });
+    }
+  });
+
+  app.get('/api/delivery-partners/me/wallet/transactions', isAuthenticated, async (req: any, res) => {
+    try {
+      const userId = req.user.claims.sub;
+      const partner = await storage.getDeliveryPartnerByUser(userId);
+      if (!partner) {
+        return res.status(404).json({ message: "Delivery partner not found" });
+      }
+
+      const transactions = await storage.getWalletTransactions(partner.id);
+      res.json(transactions);
+    } catch (error) {
+      console.error("Error fetching wallet transactions:", error);
+      res.status(500).json({ message: "Failed to fetch transactions" });
+    }
+  });
+
+  app.post('/api/delivery-partners/me/withdrawals', isAuthenticated, async (req: any, res) => {
+    try {
+      const userId = req.user.claims.sub;
+      const partner = await storage.getDeliveryPartnerByUser(userId);
+      if (!partner) {
+        return res.status(404).json({ message: "Delivery partner not found" });
+      }
+
+      const { amount, methodId } = req.body;
+      const withdrawal = await storage.createWithdrawalRequest({
+        deliveryPartnerId: partner.id,
+        amount: amount.toString(),
+        methodId,
+        status: 'pending',
+      });
+
+      // Track withdrawal request
+      const { AnalyticsService } = await import('./analytics-service');
+      await AnalyticsService.trackEvent({
+        eventType: 'withdrawal_requested',
+        userId,
+        deliveryPartnerId: partner.id,
+        sessionId: req.sessionID,
+        timestamp: new Date(),
+        properties: {
+          amount: parseFloat(amount),
+          methodId
+        }
+      });
+
+      res.status(201).json(withdrawal);
+    } catch (error) {
+      console.error("Error creating withdrawal request:", error);
+      res.status(500).json({ message: "Failed to create withdrawal request" });
+    }
+  });
+
+  app.get('/api/delivery-partners/me/withdrawal-methods', isAuthenticated, async (req: any, res) => {
+    try {
+      const userId = req.user.claims.sub;
+      const partner = await storage.getDeliveryPartnerByUser(userId);
+      if (!partner) {
+        return res.status(404).json({ message: "Delivery partner not found" });
+      }
+
+      const methods = await storage.getWithdrawalMethods(partner.id);
+      res.json(methods);
+    } catch (error) {
+      console.error("Error fetching withdrawal methods:", error);
+      res.status(500).json({ message: "Failed to fetch withdrawal methods" });
+    }
+  });
+
+  app.post('/api/delivery-partners/me/withdrawal-methods', isAuthenticated, async (req: any, res) => {
+    try {
+      const userId = req.user.claims.sub;
+      const partner = await storage.getDeliveryPartnerByUser(userId);
+      if (!partner) {
+        return res.status(404).json({ message: "Delivery partner not found" });
+      }
+
+      const method = await storage.createWithdrawalMethod({
+        deliveryPartnerId: partner.id,
+        ...req.body,
+      });
+
+      res.status(201).json(method);
+    } catch (error) {
+      console.error("Error creating withdrawal method:", error);
+      res.status(500).json({ message: "Failed to create withdrawal method" });
+    }
+  });
+
+  app.get('/api/delivery-partners/me/stats', isAuthenticated, async (req: any, res) => {
+    try {
+      const userId = req.user.claims.sub;
+      const partner = await storage.getDeliveryPartnerByUser(userId);
+      if (!partner) {
+        return res.status(404).json({ message: "Delivery partner not found" });
+      }
+
+      const stats = await storage.getDeliveryPartnerStats(partner.id);
+      res.json(stats);
+    } catch (error) {
+      console.error("Error fetching delivery partner stats:", error);
+      res.status(500).json({ message: "Failed to fetch stats" });
+    }
+  });
+
+  app.get('/api/delivery-partners/me/active-orders', isAuthenticated, async (req: any, res) => {
+    try {
+      const userId = req.user.claims.sub;
+      const partner = await storage.getDeliveryPartnerByUser(userId);
+      if (!partner) {
+        return res.status(404).json({ message: "Delivery partner not found" });
+      }
+
+      const activeOrders = await storage.getActiveOrdersForDeliveryPartner(partner.id);
+      res.json(activeOrders);
+    } catch (error) {
+      console.error("Error fetching active orders:", error);
+      res.status(500).json({ message: "Failed to fetch active orders" });
+    }
+  });
+
   // Delivery Tracking routes
   app.post('/api/delivery-tracking', isAuthenticated, async (req, res) => {
     try {

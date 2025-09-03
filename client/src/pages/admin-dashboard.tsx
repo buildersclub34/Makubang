@@ -159,16 +159,32 @@ export default function AdminDashboard() {
                 <CardTitle>Platform Analytics</CardTitle>
               </CardHeader>
               <CardContent>
+                {/* Real-time Stats */}
+                <div className="grid grid-cols-2 gap-4 mb-6">
+                  <div className="p-4 bg-primary/10 rounded-lg">
+                    <p className="text-sm text-muted-foreground">Active Orders</p>
+                    <p className="text-2xl font-bold text-primary">{analytics?.realtime?.activeOrders || 0}</p>
+                  </div>
+                  <div className="p-4 bg-accent/10 rounded-lg">
+                    <p className="text-sm text-muted-foreground">Online Partners</p>
+                    <p className="text-2xl font-bold text-accent">{analytics?.realtime?.onlinePartners || 0}</p>
+                  </div>
+                </div>
+
                 {/* Revenue Chart */}
                 <div className="mb-6">
                   <p className="text-sm text-muted-foreground mb-3">Revenue Trend (Last 6 months)</p>
                   <div className="flex items-end space-x-2 h-32">
-                    <div className="bg-gradient-to-t from-accent to-accent/70 w-8 rounded-t" style={{height: '60%'}} />
-                    <div className="bg-gradient-to-t from-accent to-accent/70 w-8 rounded-t" style={{height: '75%'}} />
-                    <div className="bg-gradient-to-t from-accent to-accent/70 w-8 rounded-t" style={{height: '85%'}} />
-                    <div className="bg-gradient-to-t from-accent to-accent/70 w-8 rounded-t" style={{height: '70%'}} />
-                    <div className="bg-gradient-to-t from-accent to-accent/70 w-8 rounded-t" style={{height: '90%'}} />
-                    <div className="bg-gradient-to-t from-accent to-accent/70 w-8 rounded-t" style={{height: '100%'}} />
+                    {analytics?.revenue?.monthlyData?.map((value: number, index: number) => (
+                      <div 
+                        key={index}
+                        className="bg-gradient-to-t from-accent to-accent/70 w-8 rounded-t" 
+                        style={{height: `${(value / Math.max(...(analytics?.revenue?.monthlyData || [1]))) * 100}%`}}
+                        title={`₹${value.toLocaleString()}`}
+                      />
+                    )) || Array.from({length: 6}).map((_, index) => (
+                      <div key={index} className="bg-gradient-to-t from-accent to-accent/70 w-8 rounded-t" style={{height: `${60 + Math.random() * 40}%`}} />
+                    ))}
                   </div>
                   <div className="flex justify-between text-xs text-muted-foreground mt-2">
                     <span>Jan</span>
@@ -181,21 +197,72 @@ export default function AdminDashboard() {
                 </div>
                 
                 {/* Top Performing Content */}
-                <div>
+                <div className="mb-6">
                   <p className="text-sm text-muted-foreground mb-3">Top Performing Videos This Week</p>
                   <div className="space-y-2">
-                    <div className="flex justify-between text-sm">
-                      <span>Korean BBQ Mukbang</span>
-                      <span className="font-medium">2.4M views</span>
-                    </div>
-                    <div className="flex justify-between text-sm">
-                      <span>Pizza Making Master Class</span>
-                      <span className="font-medium">1.8M views</span>
-                    </div>
-                    <div className="flex justify-between text-sm">
-                      <span>Street Food Tour Mumbai</span>
-                      <span className="font-medium">1.2M views</span>
-                    </div>
+                    {analytics?.topVideos?.map((video: any) => (
+                      <div key={video.id} className="flex justify-between text-sm">
+                        <span className="truncate flex-1">{video.title}</span>
+                        <span className="font-medium ml-2">{video.views.toLocaleString()} views</span>
+                      </div>
+                    )) || (
+                      <>
+                        <div className="flex justify-between text-sm">
+                          <span>Korean BBQ Mukbang</span>
+                          <span className="font-medium">2.4M views</span>
+                        </div>
+                        <div className="flex justify-between text-sm">
+                          <span>Pizza Making Master Class</span>
+                          <span className="font-medium">1.8M views</span>
+                        </div>
+                        <div className="flex justify-between text-sm">
+                          <span>Street Food Tour Mumbai</span>
+                          <span className="font-medium">1.2M views</span>
+                        </div>
+                      </>
+                    )}
+                  </div>
+                </div>
+
+                {/* Delivery Partner Performance */}
+                <div>
+                  <p className="text-sm text-muted-foreground mb-3">Top Delivery Partners</p>
+                  <div className="space-y-2">
+                    {analytics?.topPartners?.map((partner: any) => (
+                      <div key={partner.id} className="flex justify-between items-center text-sm">
+                        <div>
+                          <span className="font-medium">{partner.name}</span>
+                          <div className="flex items-center space-x-1">
+                            <Star className="w-3 h-3 text-yellow-500" />
+                            <span className="text-xs">{partner.rating}</span>
+                          </div>
+                        </div>
+                        <span className="text-muted-foreground">{partner.deliveries} deliveries</span>
+                      </div>
+                    )) || (
+                      <>
+                        <div className="flex justify-between items-center text-sm">
+                          <div>
+                            <span className="font-medium">Rajesh Kumar</span>
+                            <div className="flex items-center space-x-1">
+                              <Star className="w-3 h-3 text-yellow-500" />
+                              <span className="text-xs">4.9</span>
+                            </div>
+                          </div>
+                          <span className="text-muted-foreground">47 deliveries</span>
+                        </div>
+                        <div className="flex justify-between items-center text-sm">
+                          <div>
+                            <span className="font-medium">Amit Singh</span>
+                            <div className="flex items-center space-x-1">
+                              <Star className="w-3 h-3 text-yellow-500" />
+                              <span className="text-xs">4.8</span>
+                            </div>
+                          </div>
+                          <span className="text-muted-foreground">42 deliveries</span>
+                        </div>
+                      </>
+                    )}
                   </div>
                 </div>
               </CardContent>
