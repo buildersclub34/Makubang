@@ -1,4 +1,3 @@
-
 import { Router } from "express";
 import { storage } from "./storage";
 import { 
@@ -8,9 +7,10 @@ import {
   orders, 
   subscriptions,
   deliveryPartners,
-  walletTransactions
+  walletTransactions,
+  videos as videosTable // Alias for clarity in search
 } from "../shared/schema";
-import { eq, desc, and, gte, sql } from "drizzle-orm";
+import { eq, desc, and, gte, sql, between } from "drizzle-orm";
 import { PaymentService } from "./payment-service";
 import { DeliveryService } from "./delivery-service";
 import { SubscriptionService } from "./subscription-service";
@@ -19,6 +19,8 @@ import { AnalyticsService } from "./analytics-service";
 import { NotificationService } from "./notification-service";
 import { ContentModerationService } from "./content-moderation";
 import { MLRecommendationService } from "./ml-recommendation";
+// Import DeliveryTrackingService
+import { DeliveryTrackingService } from './delivery-tracking';
 
 const router = Router();
 
@@ -108,22 +110,22 @@ router.post("/api/videos/:videoId/interact", requireAuth, async (req: any, res) 
           .set({ likes: sql`${videos.likes} + 1` })
           .where(eq(videos.id, videoId));
         break;
-      
+
       case 'unlike':
         await storage.db.update(videos)
           .set({ likes: sql`${videos.likes} - 1` })
           .where(eq(videos.id, videoId));
         break;
-      
+
       case 'view':
         await storage.db.update(videos)
           .set({ views: sql`${videos.views} + 1` })
           .where(eq(videos.id, videoId));
-        
+
         // Track user interaction for recommendations
         await MLRecommendationService.trackInteraction(userId, videoId, 'view', value);
         break;
-      
+
       case 'share':
         await storage.db.update(videos)
           .set({ shares: sql`${videos.shares} + 1` })
@@ -154,7 +156,7 @@ router.post("/api/orders", requireAuth, async (req: any, res) => {
     const subtotal = items.reduce((sum: number, item: any) => sum + (item.price * item.quantity), 0);
     const deliveryFee = await DeliveryService.calculateDeliveryFee(restaurantId, deliveryAddress);
     const gstCalc = calculateGST(subtotal + deliveryFee.totalFee);
-    
+
     // Create order
     const newOrder = await storage.db.insert(orders).values({
       userId,
@@ -207,7 +209,7 @@ router.get("/api/restaurants/:restaurantId/analytics", requireAuth, async (req: 
   try {
     const { restaurantId } = req.params;
     const { dateRange = '30d' } = req.query;
-    
+
     const analytics = await AnalyticsService.getRestaurantAnalytics(restaurantId, dateRange as string);
     res.json(analytics);
   } catch (error) {
@@ -220,7 +222,7 @@ router.post("/api/restaurants/:restaurantId/subscribe", requireAuth, async (req:
   try {
     const { restaurantId } = req.params;
     const { planId } = req.body;
-    
+
     const subscription = await SubscriptionService.createSubscription(restaurantId, planId);
     res.json(subscription);
   } catch (error) {
@@ -233,7 +235,7 @@ router.post("/api/restaurants/:restaurantId/subscribe", requireAuth, async (req:
 router.get("/api/delivery/orders", requireAuth, requireRole(['delivery_partner']), async (req: any, res) => {
   try {
     const partnerId = req.user.id;
-    
+
     const assignedOrders = await storage.db.select()
       .from(orders)
       .where(
@@ -255,7 +257,7 @@ router.post("/api/delivery/orders/:orderId/update-status", requireAuth, requireR
   try {
     const { orderId } = req.params;
     const { status, location } = req.body;
-    
+
     const result = await DeliveryService.updateDeliveryStatus(orderId, status, location);
     res.json(result);
   } catch (error) {
@@ -280,7 +282,7 @@ router.post("/api/wallet/withdraw", requireAuth, async (req: any, res) => {
   try {
     const userId = req.user.id;
     const { amount, method } = req.body;
-    
+
     const withdrawal = await WalletService.initiateWithdrawal(userId, amount, method);
     res.json(withdrawal);
   } catch (error) {
@@ -293,7 +295,7 @@ router.post("/api/wallet/withdraw", requireAuth, async (req: any, res) => {
 router.get("/api/creators", async (req, res) => {
   try {
     const { category, search, limit = 20 } = req.query;
-    
+
     let query = storage.db.select()
       .from(users)
       .where(eq(users.role, 'creator'))
@@ -329,7 +331,7 @@ router.get("/api/admin/dashboard", requireAuth, requireRole(['admin']), async (r
 router.post("/api/admin/moderate-content", requireAuth, requireRole(['admin']), async (req: any, res) => {
   try {
     const { contentId, contentType, action } = req.body;
-    
+
     const result = await ContentModerationService.moderateContent(contentId, contentType, action);
     res.json(result);
   } catch (error) {
@@ -355,7 +357,7 @@ router.get("/api/recommendations/feed", requireAuth, async (req: any, res) => {
   try {
     const userId = req.user.id;
     const { limit = 20 } = req.query;
-    
+
     const recommendations = await MLRecommendationService.getPersonalizedFeed(userId, parseInt(limit as string));
     res.json(recommendations);
   } catch (error) {
@@ -368,7 +370,7 @@ router.post("/api/recommendations/feedback", requireAuth, async (req: any, res) 
   try {
     const userId = req.user.id;
     const { videoId, feedback, interactionType } = req.body;
-    
+
     await MLRecommendationService.trackInteraction(userId, videoId, interactionType, feedback);
     res.json({ success: true });
   } catch (error) {
@@ -382,7 +384,7 @@ router.post("/api/users/:userId/follow", requireAuth, async (req: any, res) => {
   try {
     const { userId: targetUserId } = req.params;
     const followerId = req.user.id;
-    
+
     // Implementation for follow/unfollow logic
     res.json({ success: true, following: true });
   } catch (error) {
@@ -424,19 +426,306 @@ router.post("/api/notifications/:notificationId/read", requireAuth, async (req: 
   }
 });
 
-function calculateGST(amount: number, isInterState: boolean = false) {
-  const GST_RATE = 5;
-  const gstAmount = (amount * GST_RATE) / 100;
-  
-  return {
-    subtotal: amount,
-    gstRate: GST_RATE,
-    totalGst: gstAmount,
-    total: amount + gstAmount,
-    cgst: isInterState ? 0 : gstAmount / 2,
-    sgst: isInterState ? 0 : gstAmount / 2,
-    igst: isInterState ? gstAmount : 0,
-  };
+// ===== NEWLY ADDED ROUTES =====
+
+// Search endpoints
+router.get('/api/search', async (req, res) => {
+  try {
+    const { q, location, minPrice, maxPrice, cuisine, dietary, rating, distance, sort } = req.query;
+
+    let whereConditions: any[] = [];
+
+    if (q) {
+      whereConditions.push(sql`(videos.title ILIKE '%${q}%' OR videos.description ILIKE '%${q}%' OR restaurants.name ILIKE '%${q}%')`);
+    }
+
+    if (minPrice && maxPrice) {
+      whereConditions.push(between(videosTable.price, Number(minPrice), Number(maxPrice)));
+    }
+
+    if (rating) {
+      whereConditions.push(eq(restaurants.rating, Number(rating)));
+    }
+
+    // Simple search implementation - in production, use Elasticsearch
+    const videosResult = await storage.db.select()
+      .from(videosTable)
+      .leftJoin(restaurants, eq(videosTable.restaurantId, restaurants.id))
+      .where(and(...whereConditions))
+      .limit(20);
+
+    res.json(videosResult);
+  } catch (error) {
+    console.error('Search error:', error);
+    res.status(500).json({ error: 'Search failed' });
+  }
+});
+
+router.get('/api/search/trending', async (req, res) => {
+  try {
+    const trending = [
+      'biryani', 'pizza', 'burger', 'sushi', 'pasta', 
+      'street food', 'desserts', 'healthy meals', 'spicy food'
+    ];
+    res.json(trending);
+  } catch (error) {
+    res.status(500).json({ error: 'Failed to get trending searches' });
+  }
+});
+
+// Inventory management endpoints
+router.get('/api/inventory', requireAuth, async (req, res) => {
+  try {
+    // Mock inventory data
+    const inventory = [
+      {
+        id: '1',
+        name: 'Tomatoes',
+        sku: 'VEG-001',
+        category: 'vegetables',
+        currentStock: 50,
+        minThreshold: 10,
+        maxThreshold: 100,
+        unit: 'kg',
+        costPrice: 80,
+        supplier: 'Local Farmer',
+        expiryDate: '2024-02-15',
+        location: 'Cold Storage A',
+        status: 'in_stock',
+        lastUpdated: new Date().toISOString()
+      },
+      {
+        id: '2',
+        name: 'Onions',
+        sku: 'VEG-002',
+        category: 'vegetables',
+        currentStock: 5,
+        minThreshold: 15,
+        maxThreshold: 80,
+        unit: 'kg',
+        costPrice: 60,
+        supplier: 'Wholesale Market',
+        location: 'Storage Room B',
+        status: 'low_stock',
+        lastUpdated: new Date().toISOString()
+      }
+    ];
+
+    res.json(inventory);
+  } catch (error) {
+    res.status(500).json({ error: 'Failed to get inventory' });
+  }
+});
+
+router.post('/api/inventory', requireAuth, async (req, res) => {
+  try {
+    const newItem = {
+      id: Math.random().toString(36).substr(2, 9),
+      ...req.body,
+      status: req.body.currentStock <= req.body.minThreshold ? 'low_stock' : 'in_stock',
+      lastUpdated: new Date().toISOString()
+    };
+
+    res.json(newItem);
+  } catch (error) {
+    res.status(500).json({ error: 'Failed to add inventory item' });
+  }
+});
+
+router.patch('/api/inventory/:id/stock', requireAuth, async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { quantity, type } = req.body;
+
+    // Update stock logic here
+    res.json({ success: true });
+  } catch (error) {
+    res.status(500).json({ error: 'Failed to update stock' });
+  }
+});
+
+router.get('/api/inventory/analytics', requireAuth, async (req, res) => {
+  try {
+    const analytics = {
+      totalItems: 150,
+      lowStockItems: 12,
+      totalValue: 45000,
+      expiringSoon: 8
+    };
+
+    res.json(analytics);
+  } catch (error) {
+    res.status(500).json({ error: 'Failed to get inventory analytics' });
+  }
+});
+
+// Content moderation endpoints
+router.post('/api/content/moderate', requireAuth, async (req, res) => {
+  try {
+    const { videoUrl, title, description } = req.body;
+
+    const result = await ContentModerationService.moderateVideo(videoUrl, title, description);
+    res.json(result);
+  } catch (error) {
+    res.status(500).json({ error: 'Moderation failed' });
+  }
+});
+
+// Video upload endpoint
+router.post('/api/upload/video', requireAuth, async (req, res) => {
+  try {
+    // In production, upload to cloud storage (Cloudinary, AWS S3, etc.)
+    const mockUrl = `https://example.com/videos/${Date.now()}.mp4`;
+    res.json({ url: mockUrl });
+  } catch (error) {
+    res.status(500).json({ error: 'Upload failed' });
+  }
+});
+
+// Delivery tracking endpoints
+router.get('/api/delivery/track/:orderId', async (req, res) => {
+  try {
+    const { orderId } = req.params;
+    const tracking = await DeliveryTrackingService.getTrackingInfo(orderId);
+    res.json(tracking);
+  } catch (error) {
+    res.status(500).json({ error: 'Failed to get tracking info' });
+  }
+});
+
+router.post('/api/delivery/update', requireAuth, async (req, res) => {
+  try {
+    await DeliveryTrackingService.updateDelivery(req.body);
+    res.json({ success: true });
+  } catch (error) {
+    res.status(500).json({ error: 'Failed to update delivery' });
+  }
+});
+
+router.get('/api/delivery/analytics/:partnerId?', requireAuth, async (req, res) => {
+  try {
+    const { partnerId } = req.params;
+    const analytics = await DeliveryTrackingService.getDeliveryAnalytics(partnerId);
+    res.json(analytics);
+  } catch (error) {
+    res.status(500).json({ error: 'Failed to get delivery analytics' });
+  }
+});
+
+// Advanced analytics endpoints
+router.get('/api/analytics/advanced', requireAuth, async (req, res) => {
+  try {
+    const analytics = await AnalyticsService.getAdvancedMetrics();
+    res.json(analytics);
+  } catch (error) {
+    res.status(500).json({ error: 'Failed to get advanced analytics' });
+  }
+});
+
+router.get('/api/analytics/cohort', requireAuth, async (req, res) => {
+  try {
+    const cohortData = await AnalyticsService.getCohortAnalysis();
+    res.json(cohortData);
+  } catch (error) {
+    res.status(500).json({ error: 'Failed to get cohort analysis' });
+  }
+});
+
+router.get('/api/analytics/funnel', requireAuth, async (req, res) => {
+  try {
+    const funnelData = await AnalyticsService.getFunnelAnalysis();
+    res.json(funnelData);
+  } catch (error) {
+    res.status(500).json({ error: 'Failed to get funnel analysis' });
+  }
+});
+
+// Social features endpoints
+router.post('/api/videos/:id/like', requireAuth, async (req, res) => {
+  try {
+    const { id } = req.params;
+    const userId = req.user?.id;
+
+    // Toggle like logic
+    const result = await SocialService.toggleLike(id, userId);
+    res.json(result);
+  } catch (error) {
+    res.status(500).json({ error: 'Failed to toggle like' });
+  }
+});
+
+router.post('/api/videos/:id/comment', requireAuth, async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { content } = req.body;
+    const userId = req.user?.id;
+
+    const comment = await SocialService.addComment(id, userId, content);
+    res.json(comment);
+  } catch (error) {
+    res.status(500).json({ error: 'Failed to add comment' });
+  }
+});
+
+router.post('/api/users/:id/follow', requireAuth, async (req, res) => {
+  try {
+    const { id } = req.params;
+    const followerId = req.user?.id;
+
+    const result = await SocialService.toggleFollow(followerId, id);
+    res.json(result);
+  } catch (error) {
+    res.status(500).json({ error: 'Failed to toggle follow' });
+  }
+});
+
+// GST calculator endpoint
+router.post('/api/gst/calculate', async (req, res) => {
+  try {
+    const { amount, gstRate, includesGst } = req.body;
+
+    let baseAmount, gstAmount, totalAmount;
+
+    if (includesGst) {
+      totalAmount = amount;
+      baseAmount = amount / (1 + gstRate / 100);
+      gstAmount = totalAmount - baseAmount;
+    } else {
+      baseAmount = amount;
+      gstAmount = amount * (gstRate / 100);
+      totalAmount = baseAmount + gstAmount;
+    }
+
+    res.json({
+      baseAmount: Math.round(baseAmount * 100) / 100,
+      gstAmount: Math.round(gstAmount * 100) / 100,
+      totalAmount: Math.round(totalAmount * 100) / 100,
+      gstRate
+    });
+  } catch (error) {
+    res.status(500).json({ error: 'GST calculation failed' });
+  }
+});
+
+// Mock SocialService
+class SocialService {
+  static async toggleLike(videoId: string, userId: string) {
+    return { liked: true, likeCount: 42 };
+  }
+
+  static async addComment(videoId: string, userId: string, content: string) {
+    return {
+      id: Math.random().toString(36).substr(2, 9),
+      content,
+      userId,
+      createdAt: new Date()
+    };
+  }
+
+  static async toggleFollow(followerId: string, followingId: string) {
+    return { following: true, followerCount: 128 };
+  }
 }
 
+// Export the router
 export { router };

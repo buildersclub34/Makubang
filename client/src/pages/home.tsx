@@ -4,6 +4,8 @@ import BottomNavigation from "@/components/bottom-navigation";
 import { Button } from "@/components/ui/button";
 import { Search, Bell } from "lucide-react";
 import { useState } from "react";
+import SearchPage from './search';
+import CreateContentPage from './create-content';
 
 export default function Home() {
   const { user } = useAuth();
@@ -17,7 +19,7 @@ export default function Home() {
           <div className="flex items-center space-x-3">
             <h1 className="text-xl font-bold text-primary">Makubang</h1>
           </div>
-          
+
           <div className="flex items-center space-x-4">
             {/* Search Bar */}
             <div className="hidden sm:flex items-center bg-muted rounded-full px-4 py-2 min-w-[300px]">
@@ -29,7 +31,7 @@ export default function Home() {
                 data-testid="input-search"
               />
             </div>
-            
+
             {/* Notifications */}
             <Button 
               variant="ghost" 
@@ -42,7 +44,7 @@ export default function Home() {
                 3
               </span>
             </Button>
-            
+
             {/* Profile */}
             <Button 
               variant="ghost" 
@@ -63,20 +65,8 @@ export default function Home() {
       {/* Main Content */}
       <main className="pt-16 pb-20">
         {currentSection === "feed" && <VideoFeed />}
-        
-        {currentSection === "search" && (
-          <div className="max-w-md mx-auto p-6">
-            <h2 className="text-2xl font-bold mb-4">Search</h2>
-            <p className="text-muted-foreground">Search functionality coming soon...</p>
-          </div>
-        )}
-        
-        {currentSection === "create" && (
-          <div className="max-w-md mx-auto p-6">
-            <h2 className="text-2xl font-bold mb-4">Create Content</h2>
-            <p className="text-muted-foreground">Content creation tools coming soon...</p>
-          </div>
-        )}
+        {currentSection === "search" && <SearchPage />}
+        {currentSection === "create" && <CreateContentPage />}
       </main>
 
       {/* Bottom Navigation */}
