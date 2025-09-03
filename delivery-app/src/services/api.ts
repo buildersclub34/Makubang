@@ -1,173 +1,166 @@
 
-const BASE_URL = 'http://localhost:5000'; // Update for production
+import axios from 'axios';
 
-interface ApiResponse<T> {
-  data?: T;
-  error?: string;
-  success: boolean;
-}
+const API_BASE_URL = 'http://localhost:5000/api';
 
-interface DashboardStats {
-  todayEarnings: number;
-  todayDeliveries: number;
-  weeklyEarnings: number;
-  weeklyDeliveries: number;
-  averageTime: number;
-  weeklyRating: number;
-  rating: number;
-  completionRate: number;
-  isOnline: boolean;
-}
+// Create axios instance
+const api = axios.create({
+  baseURL: API_BASE_URL,
+  headers: {
+    'Content-Type': 'application/json',
+  },
+});
 
-interface WalletData {
-  availableBalance: number;
-  pendingBalance: number;
-  totalEarned: number;
-  weeklyEarnings: number;
-  weeklyDeliveries: number;
-  averageTime: number;
-  weeklyRating: number;
-}
-
-class DeliveryAPI {
-  private async makeRequest<T>(
-    endpoint: string,
-    options: RequestInit = {}
-  ): Promise<T> {
-    try {
-      const response = await fetch(`${BASE_URL}${endpoint}`, {
-        credentials: 'include',
-        headers: {
-          'Content-Type': 'application/json',
-          ...options.headers,
-        },
-        ...options,
-      });
-
-      if (!response.ok) {
-        throw new Error(`HTTP error! status: ${response.status}`);
-      }
-
-      return await response.json();
-    } catch (error) {
-      console.error('API request failed:', error);
-      throw error;
+// Request interceptor to add auth token
+api.interceptors.request.use(
+  (config) => {
+    const token = localStorage.getItem('authToken');
+    if (token) {
+      config.headers.Authorization = `Bearer ${token}`;
     }
+    return config;
+  },
+  (error) => {
+    return Promise.reject(error);
   }
+);
 
-  // Dashboard APIs
-  async getDashboardStats(): Promise<DashboardStats> {
-    return this.makeRequest<DashboardStats>('/api/delivery-partners/me/stats');
+// Response interceptor for error handling
+api.interceptors.response.use(
+  (response) => response,
+  (error) => {
+    if (error.response?.status === 401) {
+      localStorage.removeItem('authToken');
+      // Navigate to login screen
+    }
+    return Promise.reject(error);
   }
+);
 
-  async getActiveOrders() {
-    return this.makeRequest('/api/delivery-partners/me/active-orders');
-  }
+export const authAPI = {
+  login: async (email: string, password: string) => {
+    const response = await api.post('/auth/login', { email, password });
+    return response.data;
+  },
+  
+  register: async (userData: any) => {
+    const response = await api.post('/auth/register', userData);
+    return response.data;
+  },
+  
+  getProfile: async () => {
+    const response = await api.get('/users/profile');
+    return response.data;
+  },
+  
+  updateProfile: async (profileData: any) => {
+    const response = await api.put('/users/profile', profileData);
+    return response.data;
+  },
+};
 
-  async updateOnlineStatus(isOnline: boolean, location?: { latitude: number; longitude: number }) {
-    return this.makeRequest('/api/delivery-partners/me/online-status', {
-      method: 'PATCH',
-      body: JSON.stringify({ isOnline, location }),
+export const deliveryAPI = {
+  registerPartner: async (partnerData: any) => {
+    const response = await api.post('/delivery/register', partnerData);
+    return response.data;
+  },
+  
+  updateAvailability: async (isAvailable: boolean, currentLocation: any) => {
+    const response = await api.post('/delivery/availability', {
+      isAvailable,
+      currentLocation,
     });
-  }
-
-  // Wallet APIs
-  async getWalletData(): Promise<WalletData> {
-    return this.makeRequest<WalletData>('/api/delivery-partners/me/wallet');
-  }
-
-  async getWalletTransactions() {
-    return this.makeRequest('/api/delivery-partners/me/wallet/transactions');
-  }
-
-  async getWithdrawalMethods() {
-    return this.makeRequest('/api/delivery-partners/me/withdrawal-methods');
-  }
-
-  async requestWithdrawal(amount: string, methodId: string) {
-    return this.makeRequest('/api/delivery-partners/me/withdrawals', {
-      method: 'POST',
-      body: JSON.stringify({ amount, methodId }),
+    return response.data;
+  },
+  
+  getAvailableOrders: async () => {
+    const response = await api.get('/delivery/orders');
+    return response.data;
+  },
+  
+  acceptOrder: async (orderId: string) => {
+    const response = await api.post(`/delivery/orders/${orderId}/accept`);
+    return response.data;
+  },
+  
+  updateOrderStatus: async (orderId: string, status: string, location?: any) => {
+    const response = await api.put(`/delivery/orders/${orderId}/status`, {
+      status,
+      location,
     });
-  }
+    return response.data;
+  },
+  
+  getOrderHistory: async (page = 1, limit = 20) => {
+    const response = await api.get(`/delivery/orders/history?page=${page}&limit=${limit}`);
+    return response.data;
+  },
+  
+  getEarnings: async (startDate?: string, endDate?: string) => {
+    const params = new URLSearchParams();
+    if (startDate) params.append('startDate', startDate);
+    if (endDate) params.append('endDate', endDate);
+    
+    const response = await api.get(`/delivery/earnings?${params.toString()}`);
+    return response.data;
+  },
+};
 
-  async addWithdrawalMethod(methodData: any) {
-    return this.makeRequest('/api/delivery-partners/me/withdrawal-methods', {
-      method: 'POST',
-      body: JSON.stringify(methodData),
+export const walletAPI = {
+  getBalance: async () => {
+    const response = await api.get('/wallet/balance');
+    return response.data;
+  },
+  
+  getTransactions: async (page = 1, limit = 20) => {
+    const response = await api.get(`/wallet/transactions?page=${page}&limit=${limit}`);
+    return response.data;
+  },
+  
+  withdraw: async (amount: number, bankDetails: any) => {
+    const response = await api.post('/wallet/withdraw', {
+      amount,
+      bankDetails,
     });
-  }
-
-  // Order Management APIs
-  async updateOrderStatus(trackingId: string, status: string, location?: any, notes?: string) {
-    return this.makeRequest(`/api/delivery-tracking/${trackingId}/status`, {
-      method: 'PATCH',
-      body: JSON.stringify({ status, currentLat: location?.latitude, currentLng: location?.longitude, notes }),
+    return response.data;
+  },
+  
+  addMoney: async (amount: number, paymentMethodId: string) => {
+    const response = await api.post('/wallet/add-money', {
+      amount,
+      paymentMethodId,
     });
-  }
+    return response.data;
+  },
+};
 
-  async getOrderDetails(orderId: string) {
-    return this.makeRequest(`/api/orders/${orderId}`);
-  }
+export const notificationAPI = {
+  getNotifications: async (page = 1, limit = 20) => {
+    const response = await api.get(`/notifications?page=${page}&limit=${limit}`);
+    return response.data;
+  },
+  
+  markAsRead: async (notificationId: string) => {
+    const response = await api.put(`/notifications/${notificationId}/read`);
+    return response.data;
+  },
+  
+  updatePushToken: async (token: string) => {
+    const response = await api.post('/notifications/push-token', { token });
+    return response.data;
+  },
+};
 
-  async updateLocation(location: { latitude: number; longitude: number }) {
-    return this.makeRequest('/api/delivery-partners/me/location', {
-      method: 'PATCH',
-      body: JSON.stringify({ currentLat: location.latitude, currentLng: location.longitude }),
-    });
-  }
+export const trackingAPI = {
+  getOrderLocation: async (orderId: string) => {
+    const response = await api.get(`/orders/${orderId}/location`);
+    return response.data;
+  },
+  
+  updateLocation: async (orderId: string, location: any) => {
+    const response = await api.post(`/orders/${orderId}/location`, { location });
+    return response.data;
+  },
+};
 
-  // Analytics APIs
-  async getEarningsHistory(period: 'week' | 'month' | 'year' = 'month') {
-    return this.makeRequest(`/api/delivery-partners/me/earnings?period=${period}`);
-  }
-
-  async getPerformanceMetrics() {
-    return this.makeRequest('/api/delivery-partners/me/performance');
-  }
-
-  // Profile APIs
-  async updateProfile(profileData: any) {
-    return this.makeRequest('/api/delivery-partners/me', {
-      method: 'PATCH',
-      body: JSON.stringify(profileData),
-    });
-  }
-
-  async uploadDocument(type: string, file: any) {
-    const formData = new FormData();
-    formData.append('document', file);
-    formData.append('type', type);
-
-    return this.makeRequest('/api/delivery-partners/me/documents', {
-      method: 'POST',
-      body: formData,
-      headers: {}, // Don't set Content-Type for FormData
-    });
-  }
-
-  // Notification APIs
-  async getNotifications() {
-    return this.makeRequest('/api/delivery-partners/me/notifications');
-  }
-
-  async markNotificationRead(notificationId: string) {
-    return this.makeRequest(`/api/notifications/${notificationId}/read`, {
-      method: 'PATCH',
-    });
-  }
-
-  // Support APIs
-  async createSupportTicket(subject: string, description: string, priority: string = 'medium') {
-    return this.makeRequest('/api/support/tickets', {
-      method: 'POST',
-      body: JSON.stringify({ subject, description, priority, type: 'delivery_partner' }),
-    });
-  }
-
-  async getSupportTickets() {
-    return this.makeRequest('/api/support/tickets');
-  }
-}
-
-export const deliveryAPI = new DeliveryAPI();
+export default api;
