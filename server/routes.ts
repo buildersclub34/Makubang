@@ -30,12 +30,46 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  // Video routes
+  // Video routes with ML recommendations
   app.get('/api/videos', async (req, res) => {
     try {
-      const limit = parseInt(req.query.limit as string) || 20;
-      const offset = parseInt(req.query.offset as string) || 0;
-      const videos = await storage.getVideos(limit, offset);
+      const userId = req.user?.id;
+      const location = req.query.lat && req.query.lng ?
+        { lat: parseFloat(req.query.lat as string), lng: parseFloat(req.query.lng as string) } :
+        undefined;
+
+      let videos;
+      if (userId && req.query.personalized === 'true') {
+        // Get personalized recommendations
+        const { RecommendationEngine } = await import('./ml-recommendation');
+        const recommendedVideoIds = await RecommendationEngine.getPersonalizedRecommendations(userId, location);
+        videos = await storage.getVideosByIds(recommendedVideoIds);
+      } else if (req.query.trending === 'true') {
+        // Get trending videos
+        const { RecommendationEngine } = await import('./ml-recommendation');
+        const trendingVideoIds = await RecommendationEngine.getTrendingRecommendations(20);
+        videos = await storage.getVideosByIds(trendingVideoIds);
+      } else {
+        // Get all videos
+        videos = await storage.getVideos();
+      }
+
+      // Track video fetch event
+      if (userId) {
+        const { AnalyticsService } = await import('./analytics-service');
+        await AnalyticsService.trackEvent({
+          eventType: 'video_feed_viewed',
+          userId,
+          sessionId: req.sessionID,
+          timestamp: new Date(),
+          properties: {
+            feedType: req.query.personalized ? 'personalized' : req.query.trending ? 'trending' : 'default',
+            videoCount: videos.length,
+            location
+          }
+        });
+      }
+
       res.json(videos);
     } catch (error) {
       console.error("Error fetching videos:", error);
@@ -58,9 +92,44 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   app.post('/api/videos', isAuthenticated, async (req: any, res) => {
     try {
-      const userId = req.user.claims.sub;
-      const videoData = insertVideoSchema.parse({ ...req.body, creatorId: userId });
-      const video = await storage.createVideo(videoData);
+      // Content moderation
+      const { ContentModerationService } = await import('./content-moderation');
+      const moderationResult = await ContentModerationService.moderateVideo(
+        req.body.videoUrl,
+        req.body.title,
+        req.body.description
+      );
+
+      if (!moderationResult.isApproved) {
+        return res.status(400).json({
+          message: "Content violates community guidelines",
+          reasons: moderationResult.flaggedReasons,
+          suggestedActions: moderationResult.suggestedActions
+        });
+      }
+
+      const video = await storage.createVideo({
+        ...req.body,
+        creatorId: req.user.id,
+        moderationScore: moderationResult.confidenceScore,
+        status: 'published'
+      });
+
+      // Track video creation
+      const { AnalyticsService } = await import('./analytics-service');
+      await AnalyticsService.trackEvent({
+        eventType: 'video_uploaded',
+        userId: req.user.id,
+        videoId: video.id,
+        sessionId: req.sessionID,
+        timestamp: new Date(),
+        properties: {
+          duration: req.body.duration,
+          cuisine: req.body.cuisine,
+          moderationScore: moderationResult.confidenceScore
+        }
+      });
+
       res.status(201).json(video);
     } catch (error) {
       console.error("Error creating video:", error);
@@ -71,7 +140,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.post('/api/videos/:id/view', async (req, res) => {
     try {
       await storage.incrementVideoViews(req.params.id);
-      
+
       // Record user interaction for recommendation engine
       if (req.body.userId) {
         await storage.recordUserInteraction({
@@ -82,7 +151,24 @@ export async function registerRoutes(app: Express): Promise<Server> {
           watchTime: req.body.watchTime || 0,
         });
       }
-      
+
+      // Track video view event
+      if (req.body.userId) {
+        const { AnalyticsService } = await import('./analytics-service');
+        await AnalyticsService.trackEvent({
+          eventType: 'video_viewed',
+          userId: req.body.userId,
+          videoId: req.params.id,
+          sessionId: req.sessionID,
+          timestamp: new Date(),
+          properties: {
+            watchTime: req.body.watchTime || 0,
+            restaurantId: req.body.restaurantId,
+            viewType: req.body.viewType || 'normal'
+          }
+        });
+      }
+
       res.json({ success: true });
     } catch (error) {
       console.error("Error recording video view:", error);
@@ -94,7 +180,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     try {
       const userId = req.user.claims.sub;
       await storage.incrementVideoLikes(req.params.id);
-      
+
       // Record user interaction
       await storage.recordUserInteraction({
         userId,
@@ -102,7 +188,20 @@ export async function registerRoutes(app: Express): Promise<Server> {
         restaurantId: req.body.restaurantId,
         interactionType: 'like',
       });
-      
+
+      // Track like event
+      const { AnalyticsService } = await import('./analytics-service');
+      await AnalyticsService.trackEvent({
+        eventType: 'video_liked',
+        userId,
+        videoId: req.params.id,
+        sessionId: req.sessionID,
+        timestamp: new Date(),
+        properties: {
+          restaurantId: req.body.restaurantId
+        }
+      });
+
       res.json({ success: true });
     } catch (error) {
       console.error("Error liking video:", error);
@@ -140,6 +239,22 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const userId = req.user.claims.sub;
       const restaurantData = insertRestaurantSchema.parse({ ...req.body, ownerId: userId });
       const restaurant = await storage.createRestaurant(restaurantData);
+
+      // Track restaurant creation
+      const { AnalyticsService } = await import('./analytics-service');
+      await AnalyticsService.trackEvent({
+        eventType: 'restaurant_created',
+        userId,
+        restaurantId: restaurant.id,
+        sessionId: req.sessionID,
+        timestamp: new Date(),
+        properties: {
+          name: restaurant.name,
+          cuisine: restaurant.cuisineType,
+          location: restaurant.location
+        }
+      });
+
       res.status(201).json(restaurant);
     } catch (error) {
       console.error("Error creating restaurant:", error);
@@ -161,6 +276,23 @@ export async function registerRoutes(app: Express): Promise<Server> {
     try {
       const menuItemData = insertMenuItemSchema.parse({ ...req.body, restaurantId: req.params.id });
       const menuItem = await storage.createMenuItem(menuItemData);
+
+      // Track menu item creation
+      const { AnalyticsService } = await import('./analytics-service');
+      await AnalyticsService.trackEvent({
+        eventType: 'menu_item_added',
+        userId: req.user.id,
+        restaurantId: req.params.id,
+        menuItemId: menuItem.id,
+        sessionId: req.sessionID,
+        timestamp: new Date(),
+        properties: {
+          name: menuItem.name,
+          price: menuItem.price,
+          category: menuItem.category
+        }
+      });
+
       res.status(201).json(menuItem);
     } catch (error) {
       console.error("Error creating menu item:", error);
@@ -182,29 +314,29 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.post('/api/orders', isAuthenticated, async (req: any, res) => {
     try {
       const userId = req.user.claims.sub;
-      
+
       // Calculate GST (5%)
       const subtotal = parseFloat(req.body.subtotal);
       const deliveryFee = parseFloat(req.body.deliveryFee || "40");
       const gst = (subtotal + deliveryFee) * 0.05;
       const total = subtotal + deliveryFee + gst;
-      
+
       const orderData = insertOrderSchema.parse({
         ...req.body,
         userId,
         gst: gst.toFixed(2),
         total: total.toFixed(2),
       });
-      
+
       const order = await storage.createOrder(orderData);
-      
+
       // Create creator payout if order came from a video
       if (order.videoId) {
         const video = await storage.getVideo(order.videoId);
         if (video && video.creatorId) {
           const commissionRate = 15; // 15%
           const commissionAmount = (parseFloat(order.total) * commissionRate) / 100;
-          
+
           await storage.createCreatorPayout({
             creatorId: video.creatorId,
             orderId: order.id,
@@ -216,7 +348,24 @@ export async function registerRoutes(app: Express): Promise<Server> {
           });
         }
       }
-      
+
+      // Track order creation
+      const { AnalyticsService } = await import('./analytics-service');
+      await AnalyticsService.trackEvent({
+        eventType: 'order_placed',
+        userId,
+        orderId: order.id,
+        restaurantId: order.restaurantId,
+        sessionId: req.sessionID,
+        timestamp: new Date(),
+        properties: {
+          subtotal,
+          deliveryFee,
+          gst,
+          total
+        }
+      });
+
       res.status(201).json(order);
     } catch (error) {
       console.error("Error creating order:", error);
@@ -252,6 +401,20 @@ export async function registerRoutes(app: Express): Promise<Server> {
     try {
       const { status } = req.body;
       const order = await storage.updateOrderStatus(req.params.id, status);
+
+      // Track order status update
+      const { AnalyticsService } = await import('./analytics-service');
+      await AnalyticsService.trackEvent({
+        eventType: 'order_status_updated',
+        userId: req.user.id,
+        orderId: req.params.id,
+        sessionId: req.sessionID,
+        timestamp: new Date(),
+        properties: {
+          newStatus: status
+        }
+      });
+
       res.json(order);
     } catch (error) {
       console.error("Error updating order status:", error);
@@ -321,6 +484,22 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const userId = req.user.claims.sub;
       const partnerData = insertDeliveryPartnerSchema.parse({ ...req.body, userId });
       const partner = await storage.createDeliveryPartner(partnerData);
+
+      // Track delivery partner registration
+      const { AnalyticsService } = await import('./analytics-service');
+      await AnalyticsService.trackEvent({
+        eventType: 'delivery_partner_registered',
+        userId,
+        deliveryPartnerId: partner.id,
+        sessionId: req.sessionID,
+        timestamp: new Date(),
+        properties: {
+          name: partner.name,
+          vehicleType: partner.vehicleType,
+          currentLocation: partner.currentLocation
+        }
+      });
+
       res.status(201).json(partner);
     } catch (error) {
       console.error("Error creating delivery partner:", error);
@@ -347,6 +526,21 @@ export async function registerRoutes(app: Express): Promise<Server> {
         currentLng: currentLng.toString(),
         updatedAt: new Date(),
       });
+
+      // Track delivery partner location update
+      const { AnalyticsService } = await import('./analytics-service');
+      await AnalyticsService.trackEvent({
+        eventType: 'delivery_partner_location_updated',
+        userId: req.user.id,
+        deliveryPartnerId: req.params.id,
+        sessionId: req.sessionID,
+        timestamp: new Date(),
+        properties: {
+          currentLat,
+          currentLng
+        }
+      });
+
       res.json(partner);
     } catch (error) {
       console.error("Error updating delivery partner location:", error);
@@ -361,6 +555,20 @@ export async function registerRoutes(app: Express): Promise<Server> {
         isAvailable,
         updatedAt: new Date(),
       });
+
+      // Track delivery partner availability update
+      const { AnalyticsService } = await import('./analytics-service');
+      await AnalyticsService.trackEvent({
+        eventType: 'delivery_partner_availability_updated',
+        userId: req.user.id,
+        deliveryPartnerId: req.params.id,
+        sessionId: req.sessionID,
+        timestamp: new Date(),
+        properties: {
+          isAvailable
+        }
+      });
+
       res.json(partner);
     } catch (error) {
       console.error("Error updating delivery partner availability:", error);
@@ -393,13 +601,13 @@ export async function registerRoutes(app: Express): Promise<Server> {
     try {
       const trackingData = insertDeliveryTrackingSchema.parse(req.body);
       const tracking = await storage.createDeliveryTracking(trackingData);
-      
+
       // Create earnings record for the delivery partner
       if (tracking.deliveryPartnerId) {
         const baseAmount = 50; // Base delivery fee ₹50
         const distanceBonus = 0; // Calculate based on distance
         const timeBonus = 0; // Calculate based on time efficiency
-        
+
         await storage.createDeliveryEarning({
           deliveryPartnerId: tracking.deliveryPartnerId,
           orderId: tracking.orderId,
@@ -411,7 +619,22 @@ export async function registerRoutes(app: Express): Promise<Server> {
           status: 'pending',
         });
       }
-      
+
+      // Track delivery tracking creation
+      const { AnalyticsService } = await import('./analytics-service');
+      await AnalyticsService.trackEvent({
+        eventType: 'delivery_tracking_created',
+        userId: req.user.id,
+        orderId: tracking.orderId,
+        deliveryTrackingId: tracking.id,
+        sessionId: req.sessionID,
+        timestamp: new Date(),
+        properties: {
+          deliveryPartnerId: tracking.deliveryPartnerId,
+          orderStatus: tracking.status
+        }
+      });
+
       res.status(201).json(tracking);
     } catch (error) {
       console.error("Error creating delivery tracking:", error);
@@ -423,23 +646,41 @@ export async function registerRoutes(app: Express): Promise<Server> {
     try {
       const { status, currentLat, currentLng, notes } = req.body;
       const updates: any = { status };
-      
+
       if (currentLat && currentLng) {
         updates.currentLat = currentLat.toString();
         updates.currentLng = currentLng.toString();
       }
-      
+
       if (notes) {
         updates.notes = notes;
       }
-      
+
       if (status === 'picked_up') {
         updates.pickedUpAt = new Date();
       } else if (status === 'delivered') {
         updates.deliveredAt = new Date();
       }
-      
+
       const tracking = await storage.updateDeliveryTracking(req.params.id, updates);
+
+      // Track delivery status update
+      const { AnalyticsService } = await import('./analytics-service');
+      await AnalyticsService.trackEvent({
+        eventType: 'delivery_status_updated',
+        userId: req.user.id,
+        orderId: tracking.orderId,
+        deliveryTrackingId: tracking.id,
+        sessionId: req.sessionID,
+        timestamp: new Date(),
+        properties: {
+          newStatus: status,
+          currentLat,
+          currentLng,
+          notes
+        }
+      });
+
       res.json(tracking);
     } catch (error) {
       console.error("Error updating delivery tracking:", error);
@@ -461,14 +702,28 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.get('/api/recommendations', isAuthenticated, async (req: any, res) => {
     try {
       const userId = req.user.claims.sub;
-      
+
       // Get user interactions for recommendation engine
       const interactions = await storage.getUserInteractions(userId, 50);
       const preferences = await storage.getUserPreferences(userId);
-      
+
       // Simple recommendation: get videos from restaurants user has interacted with
       const videos = await storage.getVideos(20, 0);
-      
+
+      // Track recommendation fetch
+      const { AnalyticsService } = await import('./analytics-service');
+      await AnalyticsService.trackEvent({
+        eventType: 'recommendations_viewed',
+        userId,
+        sessionId: req.sessionID,
+        timestamp: new Date(),
+        properties: {
+          interactionCount: interactions.length,
+          preferenceCount: preferences.length,
+          videoCount: videos.length
+        }
+      });
+
       res.json({
         videos,
         interactions,
@@ -491,6 +746,20 @@ export async function registerRoutes(app: Express): Promise<Server> {
         amount: Math.round(amount * 100), // Convert to paise
         currency: "inr",
       });
+
+      // Track payment intent creation
+      const { AnalyticsService } = await import('./analytics-service');
+      await AnalyticsService.trackEvent({
+        eventType: 'payment_intent_created',
+        userId: req.user.id,
+        sessionId: req.sessionID,
+        timestamp: new Date(),
+        properties: {
+          amount,
+          currency: "inr"
+        }
+      });
+
       res.json({ clientSecret: paymentIntent.client_secret });
     } catch (error: any) {
       res.status(500).json({ message: "Error creating payment intent: " + error.message });
@@ -517,7 +786,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         });
         return;
       }
-      
+
       if (!user.email) {
         return res.status(400).json({ message: 'No user email on file' });
       }
@@ -549,12 +818,27 @@ export async function registerRoutes(app: Express): Promise<Server> {
       });
 
       await storage.updateUserStripeInfo(userId, customer.id, subscription.id);
-  
+
+      // Track subscription creation
+      const { AnalyticsService } = await import('./analytics-service');
+      await AnalyticsService.trackEvent({
+        eventType: 'subscription_created',
+        userId,
+        sessionId: req.sessionID,
+        timestamp: new Date(),
+        properties: {
+          subscriptionId: subscription.id,
+          customerId: customer.id,
+          plan: 'Restaurant Starter Plan'
+        }
+      });
+
       res.json({
         subscriptionId: subscription.id,
         clientSecret: (subscription.latest_invoice as any)?.payment_intent?.client_secret,
       });
     } catch (error: any) {
+      console.error("Error creating subscription:", error);
       return res.status(400).json({ error: { message: error.message } });
     }
   });
