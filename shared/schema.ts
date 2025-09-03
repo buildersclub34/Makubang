@@ -28,17 +28,22 @@ export const sessions = pgTable(
 
 // Users table
 export const users = pgTable("users", {
-  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
-  email: varchar("email").unique(),
-  firstName: varchar("first_name"),
-  lastName: varchar("last_name"),
-  profileImageUrl: varchar("profile_image_url"),
-  stripeCustomerId: varchar("stripe_customer_id"),
-  stripeSubscriptionId: varchar("stripe_subscription_id"),
-  role: varchar("role").default("user"), // user, creator, restaurant, admin
+  id: varchar("id").primaryKey(),
+  name: varchar("name").notNull(),
+  email: varchar("email").unique().notNull(),
+  phone: varchar("phone"),
+  role: varchar("role").default("customer"), // customer, restaurant, creator, admin, delivery_partner
+  avatar: text("avatar"),
   bio: text("bio"),
-  followersCount: integer("followers_count").default(0),
-  followingCount: integer("following_count").default(0),
+  specialties: jsonb("specialties"), // for creators - cooking styles, cuisines
+  location: jsonb("location"), // {address, lat, lng, city, state}
+  preferences: jsonb("preferences"), // user food preferences, dietary restrictions
+  socialLinks: jsonb("social_links"), // instagram, youtube, etc.
+  isVerified: boolean("is_verified").default(false),
+  followers: integer("followers").default(0),
+  following: integer("following").default(0),
+  totalVideos: integer("total_videos").default(0),
+  averageRating: decimal("average_rating", { precision: 3, scale: 2 }).default("0"),
   createdAt: timestamp("created_at").defaultNow(),
   updatedAt: timestamp("updated_at").defaultNow(),
 });
@@ -46,36 +51,29 @@ export const users = pgTable("users", {
 // Restaurants table
 export const restaurants = pgTable("restaurants", {
   id: uuid("id").primaryKey().defaultRandom(),
+  ownerId: varchar("owner_id").references(() => users.id),
   name: varchar("name").notNull(),
   description: text("description"),
-  imageUrl: varchar("image_url"),
-  rating: decimal("rating", { precision: 3, scale: 2 }).default("0"),
-  deliveryTime: varchar("delivery_time").default("30-45 min"),
-  priceRange: varchar("price_range").default("₹₹"),
-  address: text("address"),
+  cuisine: jsonb("cuisine"), // array of cuisine types
+  address: text("address").notNull(),
+  location: jsonb("location"), // {lat, lng, area, city, state, pincode}
   phone: varchar("phone"),
-  ownerId: varchar("owner_id").references(() => users.id),
-  subscriptionPlan: varchar("subscription_plan").default("starter"), // starter, premium
-  subscriptionStatus: varchar("subscription_status").default("active"),
-  ordersThisMonth: integer("orders_this_month").default(0),
-  revenue: decimal("revenue", { precision: 10, scale: 2 }).default("0"),
+  email: varchar("email"),
+  images: jsonb("images"), // array of image URLs
+  menu: jsonb("menu"), // complete menu with categories, items, prices
+  operatingHours: jsonb("operating_hours"), // {monday: {open, close}, ...}
   isActive: boolean("is_active").default(true),
+  rating: decimal("rating", { precision: 3, scale: 2 }).default("0"),
+  totalOrders: integer("total_orders").default(0),
+  subscriptionStatus: varchar("subscription_status").default("inactive"), // inactive, active, expired
+  subscriptionPlan: varchar("subscription_plan"), // starter, premium, enterprise
+  subscriptionExpiresAt: timestamp("subscription_expires_at"),
+  verificationStatus: varchar("verification_status").default("pending"), // pending, verified, rejected
+  bankDetails: jsonb("bank_details"), // encrypted bank account info
+  gstNumber: varchar("gst_number"),
+  fssaiLicense: varchar("fssai_license"),
   createdAt: timestamp("created_at").defaultNow(),
   updatedAt: timestamp("updated_at").defaultNow(),
-});
-
-// Menu Items table
-export const menuItems = pgTable("menu_items", {
-  id: uuid("id").primaryKey().defaultRandom(),
-  restaurantId: uuid("restaurant_id").references(() => restaurants.id),
-  name: varchar("name").notNull(),
-  description: text("description"),
-  price: decimal("price", { precision: 8, scale: 2 }).notNull(),
-  imageUrl: varchar("image_url"),
-  category: varchar("category"),
-  isAvailable: boolean("is_available").default(true),
-  preparationTime: varchar("preparation_time").default("15-20 min"),
-  createdAt: timestamp("created_at").defaultNow(),
 });
 
 // Videos table
@@ -85,17 +83,23 @@ export const videos = pgTable("videos", {
   restaurantId: uuid("restaurant_id").references(() => restaurants.id),
   title: varchar("title").notNull(),
   description: text("description"),
-  videoUrl: varchar("video_url").notNull(),
-  thumbnailUrl: varchar("thumbnail_url"),
+  videoUrl: text("video_url").notNull(),
+  thumbnailUrl: text("thumbnail_url"),
   duration: integer("duration"), // in seconds
+  fileSize: integer("file_size"), // in bytes
+  resolution: varchar("resolution"), // 1080p, 720p, etc.
+  tags: jsonb("tags"), // array of hashtags
+  menuItems: jsonb("menu_items"), // linked menu items for ordering
   views: integer("views").default(0),
   likes: integer("likes").default(0),
-  comments: integer("comments").default(0),
   shares: integer("shares").default(0),
-  ordersGenerated: integer("orders_generated").default(0),
-  status: varchar("status").default("published"), // draft, published, moderated, rejected
-  tags: text("tags").array(),
+  comments: integer("comments").default(0),
+  orders: integer("orders").default(0), // orders generated from this video
+  revenue: decimal("revenue", { precision: 10, scale: 2 }).default("0"),
+  status: varchar("status").default("published"), // draft, published, moderated, removed
+  moderationFlags: jsonb("moderation_flags"), // content moderation results
   isPromoted: boolean("is_promoted").default(false),
+  promotionEndsAt: timestamp("promotion_ends_at"),
   createdAt: timestamp("created_at").defaultNow(),
   updatedAt: timestamp("updated_at").defaultNow(),
 });
@@ -106,61 +110,177 @@ export const orders = pgTable("orders", {
   userId: varchar("user_id").references(() => users.id),
   restaurantId: uuid("restaurant_id").references(() => restaurants.id),
   videoId: uuid("video_id").references(() => videos.id),
-  items: jsonb("items").notNull(), // array of {menuItemId, quantity, price}
+  items: jsonb("items").notNull(), // array of {menuItemId, name, price, quantity, customizations}
   subtotal: decimal("subtotal", { precision: 8, scale: 2 }).notNull(),
   deliveryFee: decimal("delivery_fee", { precision: 6, scale: 2 }).default("40"),
   gst: decimal("gst", { precision: 6, scale: 2 }).notNull(),
   total: decimal("total", { precision: 8, scale: 2 }).notNull(),
-  status: varchar("status").default("pending"), // pending, confirmed, preparing, out_for_delivery, delivered, cancelled
+  status: varchar("status").default("pending"), // pending, confirmed, preparing, picked_up, out_for_delivery, delivered, cancelled
   paymentStatus: varchar("payment_status").default("pending"), // pending, paid, failed, refunded
   stripePaymentIntentId: varchar("stripe_payment_intent_id"),
   deliveryAddress: text("delivery_address"),
   customerPhone: varchar("customer_phone"),
+  customerNotes: text("customer_notes"),
+  assignedPartnerId: varchar("assigned_partner_id").references(() => users.id),
+  estimatedPickup: timestamp("estimated_pickup"),
+  actualPickup: timestamp("actual_pickup"),
   estimatedDelivery: timestamp("estimated_delivery"),
   actualDelivery: timestamp("actual_delivery"),
+  rating: integer("rating"), // 1-5 stars
+  feedback: text("feedback"),
   createdAt: timestamp("created_at").defaultNow(),
   updatedAt: timestamp("updated_at").defaultNow(),
+});
+
+// Subscriptions table
+export const subscriptions = pgTable("subscriptions", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  restaurantId: uuid("restaurant_id").references(() => restaurants.id),
+  planId: varchar("plan_id").notNull(), // starter, premium, enterprise
+  planName: varchar("plan_name").notNull(),
+  price: decimal("price", { precision: 8, scale: 2 }).notNull(),
+  orderLimit: integer("order_limit").notNull(), // -1 for unlimited
+  ordersUsed: integer("orders_used").default(0),
+  features: jsonb("features"), // array of included features
+  status: varchar("status").default("pending"), // pending_payment, active, expired, cancelled
+  paymentIntentId: varchar("payment_intent_id"),
+  activatedAt: timestamp("activated_at"),
+  expiresAt: timestamp("expires_at"),
+  autoRenew: boolean("auto_renew").default(true),
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow(),
+});
+
+// Delivery Partners table
+export const deliveryPartners = pgTable("delivery_partners", {
+  id: varchar("id").primaryKey().references(() => users.id),
+  vehicleType: varchar("vehicle_type"), // bike, scooter, car, cycle
+  vehicleNumber: varchar("vehicle_number"),
+  licenseNumber: varchar("license_number"),
+  aadharNumber: varchar("aadhar_number"),
+  panNumber: varchar("pan_number"),
+  currentLocation: jsonb("current_location"), // {lat, lng, address}
+  isAvailable: boolean("is_available").default(true),
+  isOnline: boolean("is_online").default(false),
+  currentOrderId: uuid("current_order_id"),
+  totalDeliveries: integer("total_deliveries").default(0),
+  rating: decimal("rating", { precision: 3, scale: 2 }).default("5.0"),
+  earnings: decimal("earnings", { precision: 10, scale: 2 }).default("0"),
+  verificationStatus: varchar("verification_status").default("pending"), // pending, verified, rejected
+  bankDetails: jsonb("bank_details"), // encrypted bank account info
+  documentsVerified: boolean("documents_verified").default(false),
+  lastActiveAt: timestamp("last_active_at"),
+  joinedAt: timestamp("joined_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow(),
+});
+
+// Wallet Transactions table
+export const walletTransactions = pgTable("wallet_transactions", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  userId: varchar("user_id").references(() => users.id),
+  type: varchar("type").notNull(), // credit, debit, withdrawal, commission
+  amount: decimal("amount", { precision: 10, scale: 2 }).notNull(),
+  balance: decimal("balance", { precision: 10, scale: 2 }).notNull(),
+  description: text("description"),
+  referenceId: varchar("reference_id"), // order ID, withdrawal ID, etc.
+  referenceType: varchar("reference_type"), // order, withdrawal, commission, bonus
+  status: varchar("status").default("completed"), // pending, completed, failed, cancelled
+  paymentMethod: varchar("payment_method"), // bank_transfer, upi, paytm_wallet
+  bankDetails: jsonb("bank_details"), // withdrawal bank details
+  processedAt: timestamp("processed_at"),
+  createdAt: timestamp("created_at").defaultNow(),
+});
+
+// Video Interactions table (for ML recommendations)
+export const videoInteractions = pgTable("video_interactions", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  userId: varchar("user_id").references(() => users.id),
+  videoId: uuid("video_id").references(() => videos.id),
+  interactionType: varchar("interaction_type").notNull(), // view, like, share, comment, order, skip
+  watchTime: integer("watch_time"), // seconds watched
+  value: text("value"), // comment text, rating, etc.
+  deviceType: varchar("device_type"), // mobile, desktop, tablet
+  location: jsonb("location"), // {lat, lng, city}
+  sessionId: varchar("session_id"),
+  createdAt: timestamp("created_at").defaultNow(),
+});
+
+// Comments table
+export const comments = pgTable("comments", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  userId: varchar("user_id").references(() => users.id),
+  videoId: uuid("video_id").references(() => videos.id),
+  parentId: uuid("parent_id").references(() => comments.id), // for replies
+  content: text("content").notNull(),
+  likes: integer("likes").default(0),
+  isModerated: boolean("is_moderated").default(false),
+  moderationReason: text("moderation_reason"),
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow(),
+});
+
+// Notifications table
+export const notifications = pgTable("notifications", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  userId: varchar("user_id").references(() => users.id),
+  type: varchar("type").notNull(), // order_update, new_video, creator_update, subscription_expiry, etc.
+  title: varchar("title").notNull(),
+  message: text("message").notNull(),
+  data: jsonb("data"), // additional data like order ID, video ID, etc.
+  isRead: boolean("is_read").default(false),
+  priority: varchar("priority").default("normal"), // low, normal, high, urgent
+  channelType: varchar("channel_type").default("in_app"), // in_app, push, email, sms
+  sentAt: timestamp("sent_at"),
+  readAt: timestamp("read_at"),
+  createdAt: timestamp("created_at").defaultNow(),
 });
 
 // Creator Payouts table
 export const creatorPayouts = pgTable("creator_payouts", {
   id: uuid("id").primaryKey().defaultRandom(),
   creatorId: varchar("creator_id").references(() => users.id),
+  videoId: uuid("video_id").references(() => videos.id),
   orderId: uuid("order_id").references(() => orders.id),
-  videoId: uuid("video_id").references(() => videos.id),
-  commissionRate: decimal("commission_rate", { precision: 3, scale: 2 }).default("15"), // 15%
-  orderAmount: decimal("order_amount", { precision: 8, scale: 2 }).notNull(),
+  orderValue: decimal("order_value", { precision: 8, scale: 2 }).notNull(),
+  commissionRate: decimal("commission_rate", { precision: 5, scale: 2 }).notNull(), // percentage
   commissionAmount: decimal("commission_amount", { precision: 8, scale: 2 }).notNull(),
-  status: varchar("status").default("pending"), // pending, paid, cancelled
+  status: varchar("status").default("pending"), // pending, paid, on_hold
   paidAt: timestamp("paid_at"),
+  paymentReference: varchar("payment_reference"),
   createdAt: timestamp("created_at").defaultNow(),
 });
 
-// User Preferences table
-export const userPreferences = pgTable("user_preferences", {
+// Analytics Events table
+export const analyticsEvents = pgTable("analytics_events", {
   id: uuid("id").primaryKey().defaultRandom(),
   userId: varchar("user_id").references(() => users.id),
-  cuisineTypes: text("cuisine_types").array(),
-  spiceLevel: varchar("spice_level").default("medium"),
-  dietaryRestrictions: text("dietary_restrictions").array(),
-  priceRange: varchar("price_range").default("medium"),
-  deliveryRadius: integer("delivery_radius").default(10), // km
-  createdAt: timestamp("created_at").defaultNow(),
-  updatedAt: timestamp("updated_at").defaultNow(),
-});
-
-// User Interactions table (for recommendation engine)
-export const userInteractions = pgTable("user_interactions", {
-  id: uuid("id").primaryKey().defaultRandom(),
-  userId: varchar("user_id").references(() => users.id),
-  videoId: uuid("video_id").references(() => videos.id),
-  restaurantId: uuid("restaurant_id").references(() => restaurants.id),
-  interactionType: varchar("interaction_type").notNull(), // view, like, comment, share, order
-  watchTime: integer("watch_time"), // seconds watched
+  eventType: varchar("event_type").notNull(), // page_view, video_view, order_placed, etc.
+  entityType: varchar("entity_type"), // video, restaurant, user, order
+  entityId: varchar("entity_id"),
+  properties: jsonb("properties"), // additional event data
+  sessionId: varchar("session_id"),
+  deviceInfo: jsonb("device_info"), // device type, OS, browser, app version
+  location: jsonb("location"), // {lat, lng, city, country}
   timestamp: timestamp("timestamp").defaultNow(),
 });
 
-// Follows table
+// Content Moderation table
+export const contentModerations = pgTable("content_moderations", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  contentId: varchar("content_id").notNull(),
+  contentType: varchar("content_type").notNull(), // video, comment, user_profile
+  moderatorId: varchar("moderator_id").references(() => users.id),
+  action: varchar("action").notNull(), // approve, reject, flag, remove
+  reason: text("reason"),
+  aiConfidence: decimal("ai_confidence", { precision: 5, scale: 4 }), // AI moderation confidence
+  aiFlags: jsonb("ai_flags"), // array of AI-detected issues
+  manualReview: boolean("manual_review").default(false),
+  status: varchar("status").default("pending"), // pending, resolved, escalated
+  createdAt: timestamp("created_at").defaultNow(),
+  resolvedAt: timestamp("resolved_at"),
+});
+
+// Follows table (social graph)
 export const follows = pgTable("follows", {
   id: uuid("id").primaryKey().defaultRandom(),
   followerId: varchar("follower_id").references(() => users.id),
@@ -168,73 +288,45 @@ export const follows = pgTable("follows", {
   createdAt: timestamp("created_at").defaultNow(),
 });
 
-// Comments table
-export const comments = pgTable("comments", {
-  id: uuid("id").primaryKey().defaultRandom(),
-  videoId: uuid("video_id").references(() => videos.id),
-  userId: varchar("user_id").references(() => users.id),
-  content: text("content").notNull(),
-  likes: integer("likes").default(0),
-  parentId: uuid("parent_id").references(() => comments.id),
-  createdAt: timestamp("created_at").defaultNow(),
+// Sessions table for authentication
+export const sessions = pgTable("sessions", {
+  sid: varchar("sid").primaryKey(),
+  sess: jsonb("sess").notNull(),
+  expire: timestamp("expire").notNull(),
 });
 
-// Delivery Partners table
-export const deliveryPartners = pgTable("delivery_partners", {
+// Trending Items table
+export const trendingItems = pgTable("trending_items", {
   id: uuid("id").primaryKey().defaultRandom(),
-  userId: varchar("user_id").references(() => users.id),
   name: varchar("name").notNull(),
-  phone: varchar("phone").notNull(),
-  email: varchar("email"),
-  vehicleType: varchar("vehicle_type").default("bike"), // bike, scooter, car
-  vehicleNumber: varchar("vehicle_number"),
-  licenseNumber: varchar("license_number"),
-  isAvailable: boolean("is_available").default(true),
-  isVerified: boolean("is_verified").default(false),
-  rating: decimal("rating", { precision: 3, scale: 2 }).default("0"),
-  totalDeliveries: integer("total_deliveries").default(0),
-  currentLat: decimal("current_lat", { precision: 10, scale: 8 }),
-  currentLng: decimal("current_lng", { precision: 11, scale: 8 }),
-  earnings: decimal("earnings", { precision: 10, scale: 2 }).default("0"),
-  profileImageUrl: varchar("profile_image_url"),
-  createdAt: timestamp("created_at").defaultNow(),
-  updatedAt: timestamp("updated_at").defaultNow(),
+  type: varchar("type").notNull(), // dish, restaurant, creator, hashtag, cuisine
+  mentions: integer("mentions").default(0),
+  growth: decimal("growth", { precision: 5, scale: 2 }).default("0"), // growth percentage
+  metadata: jsonb("metadata"), // additional data like image, description, etc.
+  calculatedAt: timestamp("calculated_at").defaultNow(),
+  rank: integer("rank"),
 });
 
-// Delivery Tracking table
-export const deliveryTracking = pgTable("delivery_tracking", {
+// Collaborations table (creator marketplace)
+export const collaborations = pgTable("collaborations", {
   id: uuid("id").primaryKey().defaultRandom(),
-  orderId: uuid("order_id").references(() => orders.id),
-  deliveryPartnerId: uuid("delivery_partner_id").references(() => deliveryPartners.id),
-  status: varchar("status").default("assigned"), // assigned, picked_up, in_transit, delivered, cancelled
-  estimatedTime: integer("estimated_time"), // minutes
-  actualTime: integer("actual_time"), // minutes
-  pickupLat: decimal("pickup_lat", { precision: 10, scale: 8 }),
-  pickupLng: decimal("pickup_lng", { precision: 11, scale: 8 }),
-  dropoffLat: decimal("dropoff_lat", { precision: 10, scale: 8 }),
-  dropoffLng: decimal("dropoff_lng", { precision: 11, scale: 8 }),
-  currentLat: decimal("current_lat", { precision: 10, scale: 8 }),
-  currentLng: decimal("current_lng", { precision: 11, scale: 8 }),
-  pickedUpAt: timestamp("picked_up_at"),
-  deliveredAt: timestamp("delivered_at"),
-  notes: text("notes"),
+  restaurantId: uuid("restaurant_id").references(() => restaurants.id),
+  creatorId: varchar("creator_id").references(() => users.id),
+  title: varchar("title").notNull(),
+  description: text("description").notNull(),
+  requirements: jsonb("requirements"), // array of strings
+  deliverables: jsonb("deliverables"), // array of strings
+  budget: decimal("budget", { precision: 8, scale: 2 }).notNull(),
+  deadline: timestamp("deadline"),
+  status: varchar("status").default("pending"), // pending, accepted, in_progress, completed, cancelled
+  contractTerms: text("contract_terms"),
+  paymentStatus: varchar("payment_status").default("pending"), // pending, paid, on_hold
+  finalDeliverables: jsonb("final_deliverables"), // submitted content URLs
+  feedback: text("feedback"),
+  rating: integer("rating"), // 1-5 stars
   createdAt: timestamp("created_at").defaultNow(),
   updatedAt: timestamp("updated_at").defaultNow(),
-});
-
-// Delivery Partner Earnings table
-export const deliveryEarnings = pgTable("delivery_earnings", {
-  id: uuid("id").primaryKey().defaultRandom(),
-  deliveryPartnerId: uuid("delivery_partner_id").references(() => deliveryPartners.id),
-  orderId: uuid("order_id").references(() => orders.id),
-  baseAmount: decimal("base_amount", { precision: 8, scale: 2 }).notNull(),
-  distanceBonus: decimal("distance_bonus", { precision: 6, scale: 2 }).default("0"),
-  timeBonus: decimal("time_bonus", { precision: 6, scale: 2 }).default("0"),
-  tipAmount: decimal("tip_amount", { precision: 6, scale: 2 }).default("0"),
-  totalAmount: decimal("total_amount", { precision: 8, scale: 2 }).notNull(),
-  status: varchar("status").default("pending"), // pending, paid
-  paidAt: timestamp("paid_at"),
-  createdAt: timestamp("created_at").defaultNow(),
+  completedAt: timestamp("completed_at"),
 });
 
 // Relations
@@ -242,7 +334,6 @@ export const usersRelations = relations(users, ({ many }) => ({
   videos: many(videos),
   orders: many(orders),
   payouts: many(creatorPayouts),
-  preferences: many(userPreferences),
   interactions: many(userInteractions),
   comments: many(comments),
   restaurants: many(restaurants),
