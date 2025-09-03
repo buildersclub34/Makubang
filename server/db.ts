@@ -13,24 +13,11 @@ if (!process.env.DATABASE_URL) {
 
 export const pool = new Pool({ connectionString: process.env.DATABASE_URL });
 export const db = drizzle({ client: pool, schema });
-import { drizzle } from "drizzle-orm/postgres-js";
-import postgres from "postgres";
-import * as schema from "../shared/schema";
-
-// Database connection
-const connectionString = process.env.DATABASE_URL;
-if (!connectionString) {
-  throw new Error("DATABASE_URL environment variable is required");
-}
-
-// Create the connection
-const client = postgres(connectionString);
-export const db = drizzle(client, { schema });
-
-// Helper function to close database connection
-export const closeDb = async () => {
-  await client.end();
-};
 
 // Export schema for direct access
 export * from "../shared/schema";
+
+// Helper function to close database connection
+export const closeDb = async () => {
+  await pool.end();
+};
