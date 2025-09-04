@@ -122,3 +122,109 @@ class EmailService {
 }
 
 export const emailService = new EmailService();
+import nodemailer from 'nodemailer';
+import { logger } from '../utils/logger';
+
+export interface EmailData {
+  to: string;
+  subject: string;
+  template: string;
+  data: Record<string, any>;
+}
+
+export class EmailService {
+  private transporter: nodemailer.Transporter;
+
+  constructor() {
+    this.transporter = nodemailer.createTransporter({
+      host: process.env.SMTP_HOST || 'smtp.gmail.com',
+      port: parseInt(process.env.SMTP_PORT || '587'),
+      secure: process.env.SMTP_SECURE === 'true',
+      auth: {
+        user: process.env.SMTP_USER,
+        pass: process.env.SMTP_PASS,
+      },
+    });
+  }
+
+  async send(emailData: EmailData): Promise<boolean> {
+    try {
+      const html = this.renderTemplate(emailData.template, emailData.data);
+      
+      const mailOptions = {
+        from: process.env.SMTP_FROM || process.env.SMTP_USER,
+        to: emailData.to,
+        subject: emailData.subject,
+        html,
+      };
+
+      const result = await this.transporter.sendMail(mailOptions);
+      logger.info('Email sent successfully:', result.messageId);
+      return true;
+    } catch (error) {
+      logger.error('Failed to send email:', error);
+      return false;
+    }
+  }
+
+  private renderTemplate(template: string, data: Record<string, any>): string {
+    // Simple template rendering - replace {{variable}} with actual values
+    let html = this.getTemplate(template);
+    
+    Object.keys(data).forEach(key => {
+      const regex = new RegExp(`{{${key}}}`, 'g');
+      html = html.replace(regex, data[key] || '');
+    });
+
+    return html;
+  }
+
+  private getTemplate(templateName: string): string {
+    const templates: Record<string, string> = {
+      notification: `
+        <!DOCTYPE html>
+        <html>
+        <head>
+          <meta charset="utf-8">
+          <title>{{title}}</title>
+        </head>
+        <body style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px;">
+          <div style="background-color: #f8f9fa; padding: 20px; border-radius: 8px;">
+            <h2 style="color: #333;">Hello {{name}}!</h2>
+            <h3 style="color: #007bff;">{{title}}</h3>
+            <p style="color: #666; line-height: 1.6;">{{message}}</p>
+            {{#if actionUrl}}
+            <div style="margin: 20px 0;">
+              <a href="{{actionUrl}}" style="background-color: #007bff; color: white; padding: 10px 20px; text-decoration: none; border-radius: 4px;">View Details</a>
+            </div>
+            {{/if}}
+            <p style="color: #999; font-size: 12px; margin-top: 30px;">
+              This is an automated message from Makubang. Please do not reply to this email.
+            </p>
+          </div>
+        </body>
+        </html>
+      `,
+      welcome: `
+        <!DOCTYPE html>
+        <html>
+        <head>
+          <meta charset="utf-8">
+          <title>Welcome to Makubang</title>
+        </head>
+        <body style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px;">
+          <div style="background-color: #f8f9fa; padding: 20px; border-radius: 8px;">
+            <h2 style="color: #333;">Welcome to Makubang, {{name}}!</h2>
+            <p style="color: #666; line-height: 1.6;">Thank you for joining our community. We're excited to have you on board!</p>
+            <div style="margin: 20px 0;">
+              <a href="{{appUrl}}" style="background-color: #007bff; color: white; padding: 10px 20px; text-decoration: none; border-radius: 4px;">Get Started</a>
+            </div>
+          </div>
+        </body>
+        </html>
+      `,
+    };
+
+    return templates[templateName] || templates.notification;
+  }
+}

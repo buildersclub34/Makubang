@@ -1,7 +1,7 @@
 import { WebSocketService } from '../lib/websocket/server';
 import { db } from '../db';
 import { notifications, userNotificationSettings, userDevices } from '../db/schema';
-import { eq, and, or, inArray } from 'drizzle-orm';
+import { eq, and, or, inArray, sql } from 'drizzle-orm';
 import { v4 as uuidv4 } from 'uuid';
 import { logger } from '../utils/logger';
 import { InternalServerError, NotFoundError } from '../middleware/error-handler';
