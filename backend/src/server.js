@@ -17,6 +17,7 @@ const creatorRoutes = require('./routes/creatorRoutes');
 const adminRoutes = require('./routes/adminRoutes');
 const notificationRoutes = require('./routes/notificationRoutes');
 const subscriptionRoutes = require('./routes/subscriptionRoutes');
+const paymentRoutes = require('./routes/paymentRoutes');
 const { router: websocketRoutes, initWebSocketService } = require('./routes/websocketRoutes');
 
 // Configure Cloudinary
@@ -157,6 +158,7 @@ app.use('/api/creators', protect, creatorRoutes);
 app.use('/api/admin', protect, adminRoutes);
 app.use('/api/notifications', protect, notificationRoutes);
 app.use('/api/subscriptions', subscriptionRoutes);
+app.use('/api/payments', paymentRoutes);
 app.use('/api/ws', protect, websocketRoutes);
 
 // Health check endpoint

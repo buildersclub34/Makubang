@@ -7,17 +7,17 @@ const {
   updateSubscription,
   cancelSubscription,
   getMySubscription,
-  handleWebhook
+  verifyPayment
 } = require('../controllers/subscriptionController');
 
 const { protect, authorize } = require('../middleware/auth');
 const advancedResults = require('../middleware/advancedResults');
 const Subscription = require('../models/Subscription');
 
-// Webhook handler (must come before body parser)
-router.post('/webhook', express.raw({ type: 'application/json' }), handleWebhook);
+// Payment verification endpoint
+router.post('/verify-payment', protect, verifyPayment);
 
-// Regular routes (with body parser)
+// Regular routes
 router
   .route('/')
   .get(

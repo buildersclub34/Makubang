@@ -2,7 +2,14 @@ const Subscription = require('../models/Subscription');
 const Restaurant = require('../models/Restaurant');
 const ErrorResponse = require('../utils/errorResponse');
 const asyncHandler = require('../middleware/async');
-const stripe = require('stripe')(process.env.STRIPE_SECRET_KEY);
+const Razorpay = require('razorpay');
+const crypto = require('crypto');
+
+// Initialize Razorpay
+const razorpay = new Razorpay({
+  key_id: process.env.RAZORPAY_KEY_ID,
+  key_secret: process.env.RAZORPAY_KEY_SECRET,
+});
 
 // @desc    Get all subscriptions
 // @route   GET /api/v1/subscriptions
@@ -80,51 +87,43 @@ exports.createSubscription = asyncHandler(async (req, res, next) => {
     );
   }
 
-  // Create Stripe customer if not exists
-  let customer;
-  if (!restaurant.stripeCustomerId) {
-    customer = await stripe.customers.create({
-      email: req.user.email,
-      name: restaurant.name,
-      metadata: {
-        restaurantId: restaurant._id.toString(),
-        userId: req.user._id.toString()
-      }
-    });
-    
-    // Save Stripe customer ID to restaurant
-    restaurant.stripeCustomerId = customer.id;
-    await restaurant.save();
-  } else {
-    customer = { id: restaurant.stripeCustomerId };
-  }
-
   // Get plan details
   const plan = req.body.plan || 'basic';
   const planFeatures = Subscription.getPlanFeatures(plan);
   
-  // Create subscription in Stripe
-  const subscription = await stripe.subscriptions.create({
-    customer: customer.id,
-    items: [{ price: process.env[`STRIPE_${plan.toUpperCase()}_PRICE_ID`] }],
-    payment_behavior: 'default_incomplete',
-    payment_settings: { save_default_payment_method: 'on_subscription' },
-    expand: ['latest_invoice.payment_intent'],
-    metadata: {
+  // Calculate amount based on plan (in paise for INR)
+  const planAmounts = {
+    basic: 29900,    // ₹299
+    premium: 99900,  // ₹999
+    enterprise: 249900 // ₹2,499
+  };
+  
+  const amount = planAmounts[plan] || 29900;
+  
+  // Create order in Razorpay
+  const order = await razorpay.orders.create({
+    amount: amount,
+    currency: 'INR',
+    receipt: `sub_${Date.now()}`,
+    payment_capture: 1,
+    notes: {
       restaurantId: restaurant._id.toString(),
-      plan: plan
+      userId: req.user._id.toString(),
+      plan: plan,
+      type: 'subscription'
     }
   });
 
-  // Create subscription in database
+  // Create subscription in database (initially pending)
   const subscriptionData = {
     restaurant: restaurant._id,
     plan: plan,
-    status: 'active',
-    currentPeriodEnd: new Date(subscription.current_period_end * 1000),
-    paymentMethod: subscription.default_payment_method || subscription.pending_setup_intent,
-    subscriptionId: subscription.id,
-    features: planFeatures
+    status: 'pending',
+    currentPeriodEnd: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000), // 30 days from now
+    paymentMethod: 'razorpay',
+    orderId: order.id,
+    features: planFeatures,
+    amount: amount / 100 // Convert back to rupees
   };
 
   const newSubscription = await Subscription.create(subscriptionData);
@@ -133,7 +132,8 @@ exports.createSubscription = asyncHandler(async (req, res, next) => {
     success: true,
     data: {
       subscription: newSubscription,
-      clientSecret: subscription.latest_invoice.payment_intent.client_secret
+      order: order,
+      key: process.env.RAZORPAY_KEY_ID
     }
   });
 });
@@ -162,27 +162,37 @@ exports.updateSubscription = asyncHandler(async (req, res, next) => {
 
   // Handle plan changes
   if (req.body.plan && req.body.plan !== subscription.plan) {
-    // Update subscription in Stripe
-    const stripeSubscription = await stripe.subscriptions.retrieve(subscription.subscriptionId);
+    // For Razorpay, we'll create a new order for the plan change
+    const planAmounts = {
+      basic: 29900,
+      premium: 99900,
+      enterprise: 249900
+    };
     
-    // Get the price ID for the new plan
-    const priceId = process.env[`STRIPE_${req.body.plan.toUpperCase()}_PRICE_ID`];
+    const amount = planAmounts[req.body.plan] || 29900;
     
-    // Update subscription with the new plan
-    const updatedSubscription = await stripe.subscriptions.update(subscription.subscriptionId, {
-      items: [{
-        id: stripeSubscription.items.data[0].id,
-        price: priceId,
-      }],
-      proration_behavior: 'create_prorations',
-      payment_behavior: 'pending_if_incomplete',
+    // Create a new order for the plan change
+    const order = await razorpay.orders.create({
+      amount: amount,
+      currency: 'INR',
+      receipt: `planchange_${Date.now()}`,
+      payment_capture: 1,
+      notes: {
+        subscriptionId: subscription._id.toString(),
+        plan: req.body.plan,
+        type: 'plan_change'
+      }
     });
     
-    // Update subscription in database
-    const planFeatures = Subscription.getPlanFeatures(req.body.plan);
-    subscription.plan = req.body.plan;
-    subscription.features = planFeatures;
-    subscription.currentPeriodEnd = new Date(updatedSubscription.current_period_end * 1000);
+    return res.status(200).json({
+      success: true,
+      data: {
+        subscription: subscription,
+        order: order,
+        key: process.env.RAZORPAY_KEY_ID,
+        isPlanChange: true
+      }
+    });
   }
   
   // Handle cancellation
@@ -231,10 +241,8 @@ exports.cancelSubscription = asyncHandler(async (req, res, next) => {
     );
   }
 
-  // Cancel subscription in Stripe
-  await stripe.subscriptions.del(subscription.subscriptionId);
-  
-  // Update subscription in database
+  // For Razorpay, we'll mark the subscription as canceled
+  // No need to cancel in Razorpay as we're using one-time payments
   subscription.status = 'canceled';
   subscription.cancelAtPeriodEnd = true;
   await subscription.save();
@@ -275,49 +283,85 @@ exports.getMySubscription = asyncHandler(async (req, res, next) => {
   });
 });
 
-// @desc    Webhook handler for Stripe events
-// @route   POST /api/v1/subscriptions/webhook
-// @access  Public
-exports.handleWebhook = async (req, res) => {
-  const sig = req.headers['stripe-signature'];
-  let event;
-
-  try {
-    event = stripe.webhooks.constructEvent(
-      req.body,
-      sig,
-      process.env.STRIPE_WEBHOOK_SECRET
-    );
-  } catch (err) {
-    console.error(`Webhook Error: ${err.message}`);
-    return res.status(400).send(`Webhook Error: ${err.message}`);
+// @desc    Verify Razorpay payment and update subscription
+// @route   POST /api/v1/subscriptions/verify-payment
+// @access  Private
+exports.verifyPayment = asyncHandler(async (req, res, next) => {
+  const { order_id, payment_id, signature } = req.body;
+  
+  if (!order_id || !payment_id || !signature) {
+    return next(new ErrorResponse('Missing required payment details', 400));
   }
 
-  // Handle the event
-  switch (event.type) {
-    case 'customer.subscription.updated':
-      const subscriptionUpdated = event.data.object;
-      await handleSubscriptionUpdated(subscriptionUpdated);
-      break;
-    case 'customer.subscription.deleted':
-      const subscriptionDeleted = event.data.object;
-      await handleSubscriptionDeleted(subscriptionDeleted);
-      break;
-    case 'invoice.payment_succeeded':
-      const invoice = event.data.object;
-      await handleInvoicePaid(invoice);
-      break;
-    case 'invoice.payment_failed':
-      const failedInvoice = event.data.object;
-      await handleInvoiceFailed(failedInvoice);
-      break;
-    default:
-      console.log(`Unhandled event type ${event.type}`);
+  // Verify the payment signature
+  const generatedSignature = crypto
+    .createHmac('sha256', process.env.RAZORPAY_KEY_SECRET)
+    .update(`${order_id}|${payment_id}`)
+    .digest('hex');
+
+  if (generatedSignature !== signature) {
+    return next(new ErrorResponse('Invalid payment signature', 400));
   }
 
-  // Return a 200 response to acknowledge receipt of the event
-  res.json({ received: true });
-};
+  // Get the order details from Razorpay
+  const order = await razorpay.orders.fetch(order_id);
+  
+  // Find or create subscription based on order notes
+  if (order.notes?.type === 'subscription') {
+    // This is a new subscription
+    const subscription = await Subscription.findOne({ orderId: order_id });
+    
+    if (!subscription) {
+      return next(new ErrorResponse('Subscription not found', 404));
+    }
+    
+    // Update subscription status
+    subscription.status = 'active';
+    subscription.paymentId = payment_id;
+    subscription.paymentStatus = 'captured';
+    await subscription.save();
+    
+    // Update restaurant subscription status if needed
+    const restaurant = await Restaurant.findById(subscription.restaurant);
+    if (restaurant) {
+      restaurant.hasActiveSubscription = true;
+      await restaurant.save();
+    }
+    
+    return res.status(200).json({
+      success: true,
+      data: subscription
+    });
+  } else if (order.notes?.type === 'plan_change') {
+    // This is a plan change
+    const subscription = await Subscription.findById(order.notes.subscriptionId);
+    
+    if (!subscription) {
+      return next(new ErrorResponse('Subscription not found', 404));
+    }
+    
+    // Update subscription with new plan
+    const planFeatures = Subscription.getPlanFeatures(order.notes.plan);
+    subscription.plan = order.notes.plan;
+    subscription.features = planFeatures;
+    subscription.paymentId = payment_id;
+    subscription.paymentStatus = 'captured';
+    
+    // Extend subscription period
+    const newEndDate = new Date();
+    newEndDate.setMonth(newEndDate.getMonth() + 1); // Add 1 month
+    subscription.currentPeriodEnd = newEndDate;
+    
+    await subscription.save();
+    
+    return res.status(200).json({
+      success: true,
+      data: subscription
+    });
+  }
+  
+  return next(new ErrorResponse('Invalid order type', 400));
+});
 
 // Helper function to handle subscription updates
 const handleSubscriptionUpdated = async (subscription) => {
