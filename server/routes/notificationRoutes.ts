@@ -2,7 +2,7 @@ import { Router } from 'express';
 import { body, param, query } from 'express-validator';
 import { NotificationController } from '../controllers/notificationController';
 import { isAuthenticated } from '../middleware/auth';
-import { validateRequest } from '../middleware/validateRequest';
+import { validateRequest } from '../middleware/validateRequest.js';
 
 export const createNotificationRoutes = (notificationController: NotificationController) => {
   const router = Router();
