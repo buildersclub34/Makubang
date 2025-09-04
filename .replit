@@ -6,7 +6,7 @@ expertMode = true
 channel = "stable-25_05"
 
 [workflows]
-runButton = "Makubang Development"
+runButton = "Start All Services"
 
 [[workflows.workflow]]
 name = "Project"
@@ -61,6 +61,40 @@ args = "npm run dev:delivery"
 
 [[workflows.workflow]]
 name = "Makubang Development"
+author = 41534072
+mode = "parallel"
+
+[[workflows.workflow.tasks]]
+task = "shell.exec"
+args = "npm run dev:server"
+
+[[workflows.workflow.tasks]]
+task = "shell.exec"
+args = "npm run dev:mobile"
+
+[[workflows.workflow.tasks]]
+task = "shell.exec"
+args = "npm run dev:delivery"
+
+[[workflows.workflow]]
+name = "Start All Services"
+author = 41534072
+mode = "parallel"
+
+[[workflows.workflow.tasks]]
+task = "shell.exec"
+args = "npm run dev:server"
+
+[[workflows.workflow.tasks]]
+task = "shell.exec"
+args = "npm run dev:mobile"
+
+[[workflows.workflow.tasks]]
+task = "shell.exec"
+args = "npm run dev:delivery"
+
+[[workflows.workflow]]
+name = "Start All Services"
 author = 41534072
 mode = "parallel"
 

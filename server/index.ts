@@ -7,6 +7,10 @@ import { config } from 'dotenv';
 import { createServer } from 'http';
 import { Server } from 'socket.io';
 import path from 'path';
+import { fileURLToPath } from 'url';
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
 
 // Load environment variables
 config();
@@ -159,7 +163,7 @@ const PORT = process.env.PORT || 5000;
 
 httpServer.listen(PORT, '0.0.0.0', () => {
   console.log(`🚀 Makubang Server running on port ${PORT}`);
-  console.log(`📱 WebSocket server ready at ws://localhost:${PORT}/ws`);
+  console.log(`📱 WebSocket server ready at ws://0.0.0.0:${PORT}/ws`);
   console.log(`🔔 Notifications service initialized`);
   console.log(`📍 Order tracking service active`);
 });

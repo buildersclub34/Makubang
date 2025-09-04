@@ -2,45 +2,39 @@
 {
   "expo": {
     "name": "Makubang Delivery",
-    "slug": "makubang-delivery-app",
+    "slug": "makubang-delivery",
     "version": "1.0.0",
     "orientation": "portrait",
     "icon": "./assets/icon.png",
-    "userInterfaceStyle": "automatic",
+    "userInterfaceStyle": "light",
     "splash": {
-      "image": "./assets/splash.png",
+      "image": "./assets/icon.png",
       "resizeMode": "contain",
-      "backgroundColor": "#1A1A1A"
+      "backgroundColor": "#ffffff"
     },
     "assetBundlePatterns": [
       "**/*"
     ],
     "ios": {
-      "supportsTablet": false,
+      "supportsTablet": true,
       "bundleIdentifier": "com.makubang.delivery"
     },
     "android": {
       "adaptiveIcon": {
-        "foregroundImage": "./assets/adaptive-icon.png",
-        "backgroundColor": "#1A1A1A"
+        "foregroundImage": "./assets/icon.png",
+        "backgroundColor": "#ffffff"
       },
-      "package": "com.makubang.delivery",
-      "permissions": [
-        "ACCESS_FINE_LOCATION",
-        "ACCESS_COARSE_LOCATION"
-      ]
+      "package": "com.makubang.delivery"
     },
     "web": {
-      "favicon": "./assets/favicon.png"
+      "favicon": "./assets/icon.png",
+      "bundler": "metro"
     },
     "plugins": [
-      "expo-router",
-      "expo-location",
-      "expo-notifications"
+      "expo-router"
     ],
-    "extra": {
-      "apiUrl": "http://localhost:5000/api",
-      "wsUrl": "ws://localhost:5000"
+    "experiments": {
+      "typedRoutes": true
     }
   }
 }
