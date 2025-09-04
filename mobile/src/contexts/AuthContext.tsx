@@ -1,100 +1,63 @@
-import React, { createContext, useContext, useEffect, useState } from 'react';
-import * as SecureStore from 'expo-secure-store';
-import { Platform } from 'react-native';
-import { router } from 'expo-router';
-import { useDispatch } from 'react-redux';
-import { loginSuccess, logout as logoutAction } from '../store/slices/authSlice';
-import api from '../services/api';
-import { User } from '../types';
 
-interface AuthContextData {
-  user: User | null;
-  isLoading: boolean;
-  isAuthenticated: boolean;
-  login: (email: string, password: string) => Promise<void>;
-  register: (userData: RegisterData) => Promise<void>;
-  logout: () => Promise<void>;
-  updateUser: (userData: Partial<User>) => Promise<void>;
-}
+import React, { createContext, useContext, useState, useEffect, ReactNode } from 'react';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 
-interface RegisterData {
-  name: string;
+interface User {
+  id: string;
   email: string;
-  password: string;
-  phone?: string;
+  name: string;
 }
 
-const AuthContext = createContext<AuthContextData>({} as AuthContextData);
+interface AuthContextType {
+  user: User | null;
+  isAuthenticated: boolean;
+  isLoading: boolean;
+  login: (email: string, password: string) => Promise<void>;
+  logout: () => Promise<void>;
+  register: (userData: any) => Promise<void>;
+}
 
-export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
+const AuthContext = createContext<AuthContextType | undefined>(undefined);
+
+export function AuthProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<User | null>(null);
   const [isLoading, setIsLoading] = useState(true);
-  const dispatch = useDispatch();
 
-  // Load user from storage on app start
   useEffect(() => {
-    const loadUser = async () => {
-      try {
-        const userData = await SecureStore.getItemAsync('user');
-        const token = await SecureStore.getItemAsync('token');
+    checkAuthStatus();
+  }, []);
 
-        if (userData && token) {
-          const parsedUser = JSON.parse(userData);
-          setUser(parsedUser);
-          api.defaults.headers.common['Authorization'] = `Bearer ${token}`;
-          dispatch(loginSuccess({ user: parsedUser, token }));
-        }
-      } catch (error) {
-        console.error('Failed to load user:', error);
-      } finally {
-        setIsLoading(false);
-      }
-    };
-
-    loadUser();
-  }, [dispatch]);
-
-  const login = async (email: string, password: string) => {
+  const checkAuthStatus = async () => {
     try {
-      setIsLoading(true);
-      const response = await api.post('/auth/login', { email, password });
-      const { user, token } = response.data;
-
-      await SecureStore.setItemAsync('user', JSON.stringify(user));
-      await SecureStore.setItemAsync('token', token);
-
-      api.defaults.headers.common['Authorization'] = `Bearer ${token}`;
-      setUser(user);
-      dispatch(loginSuccess({ user, token }));
+      const token = await AsyncStorage.getItem('authToken');
+      const userData = await AsyncStorage.getItem('userData');
       
-      // Navigate to home after successful login
-      router.replace('/(tabs)/home');
-    } catch (error: any) {
-      console.error('Login error:', error);
-      throw new Error(error.response?.data?.message || 'Login failed');
+      if (token && userData) {
+        setUser(JSON.parse(userData));
+      }
+    } catch (error) {
+      console.error('Auth check error:', error);
     } finally {
       setIsLoading(false);
     }
   };
 
-  const register = async (userData: RegisterData) => {
+  const login = async (email: string, password: string) => {
+    setIsLoading(true);
     try {
-      setIsLoading(true);
-      const response = await api.post('/auth/register', userData);
-      const { user, token } = response.data;
-
-      await SecureStore.setItemAsync('user', JSON.stringify(user));
-      await SecureStore.setItemAsync('token', token);
-
-      api.defaults.headers.common['Authorization'] = `Bearer ${token}`;
-      setUser(user);
-      dispatch(loginSuccess({ user, token }));
+      // Simulate login - replace with actual API call
+      const mockUser = {
+        id: '1',
+        email,
+        name: 'User'
+      };
       
-      // Navigate to home after successful registration
-      router.replace('/(tabs)/home');
-    } catch (error: any) {
-      console.error('Registration error:', error);
-      throw new Error(error.response?.data?.message || 'Registration failed');
+      await AsyncStorage.setItem('authToken', 'mock-token');
+      await AsyncStorage.setItem('userData', JSON.stringify(mockUser));
+      setUser(mockUser);
+    } catch (error) {
+      console.error('Login error:', error);
+      throw error;
     } finally {
       setIsLoading(false);
     }
@@ -102,78 +65,51 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
   const logout = async () => {
     try {
-      setIsLoading(true);
-      
-      // Clear secure storage
-      await Promise.all([
-        SecureStore.deleteItemAsync('user'),
-        SecureStore.deleteItemAsync('token'),
-      ]);
-
-      // Clear API headers
-      delete api.defaults.headers.common['Authorization'];
-      
-      // Reset state
+      await AsyncStorage.removeItem('authToken');
+      await AsyncStorage.removeItem('userData');
       setUser(null);
-      
-      // Dispatch logout action
-      dispatch(logoutAction());
-      
-      // Navigate to login
-      router.replace('/auth/login');
     } catch (error) {
       console.error('Logout error:', error);
-      throw new Error('Failed to logout');
+    }
+  };
+
+  const register = async (userData: any) => {
+    setIsLoading(true);
+    try {
+      // Simulate registration - replace with actual API call
+      const newUser = {
+        id: Date.now().toString(),
+        email: userData.email,
+        name: userData.name
+      };
+      
+      await AsyncStorage.setItem('authToken', 'mock-token');
+      await AsyncStorage.setItem('userData', JSON.stringify(newUser));
+      setUser(newUser);
+    } catch (error) {
+      console.error('Register error:', error);
+      throw error;
     } finally {
       setIsLoading(false);
     }
   };
 
-  const updateUser = async (userData: Partial<User>) => {
-    try {
-      if (!user) return;
-      
-      const updatedUser = { ...user, ...userData };
-      
-      // Update in secure storage
-      await SecureStore.setItemAsync('user', JSON.stringify(updatedUser));
-      
-      // Update state
-      setUser(updatedUser);
-      
-      // Update in Redux
-      dispatch(loginSuccess({ user: updatedUser, token: await SecureStore.getItemAsync('token') || '' }));
-      
-      return updatedUser;
-    } catch (error) {
-      console.error('Update user error:', error);
-      throw new Error('Failed to update user');
-    }
+  const value = {
+    user,
+    isAuthenticated: !!user,
+    isLoading,
+    login,
+    logout,
+    register,
   };
 
-  return (
-    <AuthContext.Provider
-      value={{
-        user,
-        isLoading,
-        isAuthenticated: !!user,
-        login,
-        register,
-        logout,
-        updateUser,
-      }}
-    >
-      {children}
-    </AuthContext.Provider>
-  );
-};
+  return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
+}
 
-export const useAuth = () => {
+export function useAuth() {
   const context = useContext(AuthContext);
-  if (!context) {
+  if (context === undefined) {
     throw new Error('useAuth must be used within an AuthProvider');
   }
   return context;
-};
-
-export default AuthContext;
+}
