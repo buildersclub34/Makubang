@@ -1,3 +1,4 @@
+
 // Environment configuration
 export const isProduction = process.env.NODE_ENV === 'production';
 export const isDevelopment = process.env.NODE_ENV === 'development';
@@ -9,26 +10,6 @@ export const HOST = process.env.HOST || '0.0.0.0';
 // JWT configuration
 export const JWT_SECRET = process.env.JWT_SECRET || 'your-secret-key';
 export const JWT_EXPIRE = process.env.JWT_EXPIRE || '7d';
-
-// Consolidated config object
-export const config = {
-  jwt: {
-    secret: JWT_SECRET,
-    expiresIn: JWT_EXPIRE,
-    refreshSecret: process.env.JWT_REFRESH_SECRET || 'your-refresh-secret-key',
-    refreshExpiresIn: process.env.JWT_REFRESH_EXPIRE || '30d',
-  },
-  port: PORT,
-  host: HOST,
-  database: DB_CONFIG,
-  email: EMAIL_CONFIG,
-  session: SESSION_CONFIG,
-  upload: UPLOAD_CONFIG,
-  features: FEATURES,
-  security: SECURITY_HEADERS,
-  cors: CORS_WHITELIST,
-  rateLimit: RATE_LIMIT,
-};
 
 // Database configuration
 export const DB_CONFIG = {
@@ -114,6 +95,26 @@ export const FEATURES = {
   enableRateLimiting: process.env.ENABLE_RATE_LIMITING !== 'false',
   enableSecurityHeaders: process.env.ENABLE_SECURITY_HEADERS !== 'false',
   enableRequestLogging: process.env.ENABLE_REQUEST_LOGGING !== 'false',
+};
+
+// Consolidated config object (must be declared after all dependencies)
+export const config = {
+  jwt: {
+    secret: JWT_SECRET,
+    expiresIn: JWT_EXPIRE,
+    refreshSecret: process.env.JWT_REFRESH_SECRET || 'your-refresh-secret-key',
+    refreshExpiresIn: process.env.JWT_REFRESH_EXPIRE || '30d',
+  },
+  port: PORT,
+  host: HOST,
+  database: DB_CONFIG,
+  email: EMAIL_CONFIG,
+  session: SESSION_CONFIG,
+  upload: UPLOAD_CONFIG,
+  features: FEATURES,
+  security: SECURITY_HEADERS,
+  cors: CORS_WHITELIST,
+  rateLimit: RATE_LIMIT,
 };
 
 // Placeholder for the auth module
