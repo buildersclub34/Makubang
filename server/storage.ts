@@ -31,7 +31,7 @@ import {
   type InsertMenuItem,
   type InsertDeliveryPartner,
   type InsertDeliveryTracking,
-} from "@shared/schema";
+} from "../shared/schema";
 import { db } from "./db";
 import { eq, desc, and, sql, gte, lte, count, avg } from "drizzle-orm";
 

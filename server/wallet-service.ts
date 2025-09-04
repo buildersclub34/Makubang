@@ -7,7 +7,7 @@ import {
   withdrawalRequests,
   deliveryPartners,
   deliveryEarnings
-} from "@shared/schema";
+} from "../shared/schema";
 import { eq, and, desc, sum, gte } from "drizzle-orm";
 
 export class WalletService {
