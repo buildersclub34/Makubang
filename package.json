@@ -8,7 +8,7 @@
     "build:client": "cd client && npm install && npm run build",
     "build:server": "tsc && tsc-alias",
     "start": "NODE_ENV=production node dist/server/index.js",
-    "dev": "npm run build:client && NODE_ENV=development tsx server/index.ts",
+    "dev": "NODE_ENV=development tsx server/index.ts",
     "dev:backend": "NODE_ENV=development tsx server/index.ts",
     "dev:mobile": "cd mobile && npm run start -- --port 8081",
     "dev:delivery": "cd delivery-app && npm run start -- --port 8082",

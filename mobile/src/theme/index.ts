@@ -1,3 +1,4 @@
+
 import colors from './colors';
 
 export const theme = {
@@ -8,7 +9,6 @@ export const theme = {
     md: 16,
     lg: 24,
     xl: 32,
-    xxl: 48,
   },
   borderRadius: {
     sm: 4,
