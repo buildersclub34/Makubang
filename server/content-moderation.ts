@@ -1,167 +1,320 @@
 
 import OpenAI from 'openai';
+import { db } from './db';
+import { contentModerationReports, videos, users } from '../shared/schema';
+import { eq, and } from 'drizzle-orm';
+
+export interface ContentModerationRequest {
+  contentType: 'video' | 'comment' | 'profile';
+  contentId: string;
+  title?: string;
+  description?: string;
+  videoUrl?: string;
+  text?: string;
+  metadata?: Record<string, any>;
+}
 
 export interface ModerationResult {
-  isApproved: boolean;
+  approved: boolean;
+  confidence: number;
   flaggedReasons: string[];
-  confidenceScore: number;
   suggestedActions: string[];
+  requiresManualReview: boolean;
+  metadata?: Record<string, any>;
 }
 
 export class ContentModerationService {
-  private static openai = new OpenAI({
-    apiKey: process.env.OPENAI_API_KEY || 'demo-key'
-  });
+  private openai: OpenAI;
 
-  // Moderate video content
-  static async moderateVideo(videoUrl: string, title: string, description: string): Promise<ModerationResult> {
-    try {
-      const textModeration = await this.moderateText(`${title} ${description}`);
-      const visualModeration = await this.moderateVideoVisual(videoUrl);
-      
-      const flaggedReasons = [...textModeration.flaggedReasons, ...visualModeration.flaggedReasons];
-      const isApproved = flaggedReasons.length === 0;
-      
-      return {
-        isApproved,
-        flaggedReasons,
-        confidenceScore: Math.min(textModeration.confidenceScore, visualModeration.confidenceScore),
-        suggestedActions: this.getSuggestedActions(flaggedReasons)
-      };
-    } catch (error) {
-      console.error('Moderation error:', error);
-      return {
-        isApproved: false,
-        flaggedReasons: ['moderation_service_error'],
-        confidenceScore: 0,
-        suggestedActions: ['manual_review']
-      };
+  constructor() {
+    if (!process.env.OPENAI_API_KEY) {
+      console.warn('OpenAI API key not found. Content moderation will use basic rules only.');
+    } else {
+      this.openai = new OpenAI({
+        apiKey: process.env.OPENAI_API_KEY,
+      });
     }
   }
 
-  // Moderate text content (titles, descriptions, comments)
-  static async moderateText(text: string): Promise<ModerationResult> {
-    if (!text.trim()) {
-      return {
-        isApproved: true,
-        flaggedReasons: [],
-        confidenceScore: 1.0,
-        suggestedActions: []
-      };
-    }
-
+  // Main moderation function
+  async moderateContent(request: ContentModerationRequest): Promise<ModerationResult> {
     try {
-      // Use OpenAI moderation API
-      const moderationResponse = await this.openai.moderations.create({
-        input: text
-      });
+      const results: Partial<ModerationResult> = {
+        approved: true,
+        confidence: 0.95,
+        flaggedReasons: [],
+        suggestedActions: [],
+        requiresManualReview: false,
+      };
 
-      const result = moderationResponse.results[0];
-      const flaggedReasons: string[] = [];
-
-      if (result.flagged) {
-        Object.entries(result.categories).forEach(([category, flagged]) => {
-          if (flagged) {
-            flaggedReasons.push(category);
-          }
-        });
+      // OpenAI moderation for text content
+      if (this.openai && (request.title || request.description || request.text)) {
+        const textToModerate = [request.title, request.description, request.text]
+          .filter(Boolean)
+          .join(' ');
+        
+        const openaiResult = await this.moderateWithOpenAI(textToModerate);
+        if (!openaiResult.approved) {
+          results.approved = false;
+          results.flaggedReasons!.push(...openaiResult.flaggedReasons);
+          results.confidence = openaiResult.confidence;
+        }
       }
 
-      // Additional custom checks
-      const customFlags = this.performCustomTextChecks(text);
-      flaggedReasons.push(...customFlags);
+      // Basic rule-based moderation
+      const basicResult = await this.moderateWithBasicRules(request);
+      if (!basicResult.approved) {
+        results.approved = false;
+        results.flaggedReasons!.push(...basicResult.flaggedReasons);
+        results.confidence = Math.min(results.confidence!, basicResult.confidence);
+      }
+
+      // Video-specific moderation
+      if (request.contentType === 'video' && request.videoUrl) {
+        const videoResult = await this.moderateVideo(request);
+        if (!videoResult.approved) {
+          results.approved = false;
+          results.flaggedReasons!.push(...videoResult.flaggedReasons);
+          results.confidence = Math.min(results.confidence!, videoResult.confidence);
+        }
+      }
+
+      // Determine if manual review is needed
+      results.requiresManualReview = 
+        results.confidence! < 0.8 || 
+        results.flaggedReasons!.includes('hate') ||
+        results.flaggedReasons!.includes('violence') ||
+        results.flaggedReasons!.includes('sexual');
+
+      // Get suggested actions
+      results.suggestedActions = this.getSuggestedActions(results.flaggedReasons!);
+
+      return results as ModerationResult;
+    } catch (error) {
+      console.error('Content moderation error:', error);
+      return {
+        approved: false,
+        confidence: 0.5,
+        flaggedReasons: ['moderation_error'],
+        suggestedActions: ['manual_review'],
+        requiresManualReview: true,
+      };
+    }
+  }
+
+  // OpenAI-based moderation
+  private async moderateWithOpenAI(text: string): Promise<ModerationResult> {
+    try {
+      const response = await this.openai.moderations.create({
+        input: text,
+      });
+
+      const result = response.results[0];
+      const flaggedCategories = Object.entries(result.categories)
+        .filter(([_, flagged]) => flagged)
+        .map(([category]) => category);
+
+      const confidence = this.calculateConfidenceScore(result.category_scores);
 
       return {
-        isApproved: flaggedReasons.length === 0,
-        flaggedReasons,
-        confidenceScore: this.calculateConfidenceScore(result.category_scores),
-        suggestedActions: this.getSuggestedActions(flaggedReasons)
+        approved: !result.flagged,
+        confidence,
+        flaggedReasons: flaggedCategories,
+        suggestedActions: [],
+        requiresManualReview: result.flagged && confidence < 0.9,
       };
     } catch (error) {
-      console.error('Text moderation error:', error);
-      return {
-        isApproved: false,
-        flaggedReasons: ['moderation_api_error'],
-        confidenceScore: 0,
-        suggestedActions: ['manual_review']
-      };
+      console.error('OpenAI moderation error:', error);
+      throw error;
     }
   }
 
-  // Moderate visual content in videos
-  private static async moderateVideoVisual(videoUrl: string): Promise<ModerationResult> {
-    // In a real implementation, this would:
-    // 1. Extract frames from video
-    // 2. Use computer vision API to analyze frames
-    // 3. Check for inappropriate content, logos, etc.
-    
-    // For now, return a mock result
-    const mockFlags: string[] = [];
-    
-    // Simulate some basic checks
-    if (videoUrl.includes('inappropriate')) {
-      mockFlags.push('inappropriate_visual_content');
-    }
-    
-    return {
-      isApproved: mockFlags.length === 0,
-      flaggedReasons: mockFlags,
-      confidenceScore: 0.9,
-      suggestedActions: this.getSuggestedActions(mockFlags)
-    };
-  }
-
-  // Custom text checks for food-specific content
-  private static performCustomTextChecks(text: string): string[] {
-    const flags: string[] = [];
-    const lowerText = text.toLowerCase();
+  // Basic rule-based moderation
+  private async moderateWithBasicRules(request: ContentModerationRequest): Promise<ModerationResult> {
+    const flaggedReasons: string[] = [];
+    const textContent = [request.title, request.description, request.text].filter(Boolean).join(' ').toLowerCase();
 
     // Check for spam patterns
     const spamPatterns = [
-      /(.)\1{4,}/g, // Repeated characters
-      /free\s+(delivery|food|meal)/gi,
-      /click\s+here/gi,
-      /urgent/gi
+      /(.)\1{4,}/, // Repeated characters
+      /\b(buy now|click here|limited time|act now)\b/gi,
+      /\b(www\.|http|\.com|\.in)\b/gi,
     ];
 
     spamPatterns.forEach(pattern => {
-      if (pattern.test(text)) {
-        flags.push('potential_spam');
+      if (pattern.test(textContent)) {
+        flaggedReasons.push('potential_spam');
       }
     });
 
     // Check for misleading claims
     const misleadingPatterns = [
-      /100%\s+(natural|organic|pure)/gi,
-      /instant\s+(weight\s+loss|cure)/gi,
-      /guaranteed\s+results/gi
+      /\b(100% guaranteed|miracle|instant|overnight success)\b/gi,
+      /\b(doctors hate|secret trick|one weird trick)\b/gi,
     ];
 
     misleadingPatterns.forEach(pattern => {
-      if (pattern.test(text)) {
-        flags.push('misleading_claims');
+      if (pattern.test(textContent)) {
+        flaggedReasons.push('misleading_claims');
       }
     });
 
     // Check for competitor mentions
     const competitorNames = ['zomato', 'swiggy', 'ubereats', 'foodpanda'];
     competitorNames.forEach(competitor => {
-      if (lowerText.includes(competitor)) {
-        flags.push('competitor_mention');
+      if (textContent.includes(competitor)) {
+        flaggedReasons.push('competitor_mention');
       }
     });
 
-    return flags;
+    return {
+      approved: flaggedReasons.length === 0,
+      confidence: flaggedReasons.length === 0 ? 0.9 : 0.6,
+      flaggedReasons,
+      suggestedActions: [],
+      requiresManualReview: flaggedReasons.includes('misleading_claims'),
+    };
   }
 
-  // Calculate confidence score from OpenAI scores
-  private static calculateConfidenceScore(categoryScores: any): number {
+  // Video-specific moderation
+  private async moderateVideo(request: ContentModerationRequest): Promise<ModerationResult> {
+    const flaggedReasons: string[] = [];
+
+    // Basic video metadata checks
+    if (request.metadata) {
+      // Check video duration
+      if (request.metadata.duration && request.metadata.duration > 300) { // 5 minutes
+        flaggedReasons.push('excessive_duration');
+      }
+
+      // Check file size (assuming it's in bytes)
+      if (request.metadata.fileSize && request.metadata.fileSize > 100 * 1024 * 1024) { // 100MB
+        flaggedReasons.push('large_file_size');
+      }
+    }
+
+    // TODO: Implement actual video content analysis
+    // This would require video processing libraries or external services
+
+    return {
+      approved: flaggedReasons.length === 0,
+      confidence: 0.7,
+      flaggedReasons,
+      suggestedActions: [],
+      requiresManualReview: false,
+    };
+  }
+
+  // Create moderation report
+  async createModerationReport(
+    contentType: string,
+    contentId: string,
+    reporterId: string,
+    reason: string,
+    description?: string
+  ) {
+    try {
+      const [report] = await db.insert(contentModerationReports).values({
+        id: crypto.randomUUID(),
+        contentType,
+        contentId,
+        reporterId,
+        reason,
+        description,
+        status: 'pending',
+        autoFlagged: false,
+        severity: this.determineSeverity(reason),
+        createdAt: new Date(),
+        updatedAt: new Date(),
+      }).returning();
+
+      return report;
+    } catch (error) {
+      console.error('Error creating moderation report:', error);
+      throw new Error('Failed to create moderation report');
+    }
+  }
+
+  // Auto-flag content based on AI analysis
+  async autoFlagContent(moderationResult: ModerationResult, contentType: string, contentId: string) {
+    if (!moderationResult.approved || moderationResult.requiresManualReview) {
+      try {
+        await db.insert(contentModerationReports).values({
+          id: crypto.randomUUID(),
+          contentType,
+          contentId,
+          reporterId: null, // System-generated report
+          reason: moderationResult.flaggedReasons.join(', '),
+          description: `Auto-flagged by AI moderation system. Confidence: ${moderationResult.confidence}`,
+          status: 'pending',
+          autoFlagged: true,
+          severity: this.determineSeverityFromReasons(moderationResult.flaggedReasons),
+          metadata: {
+            moderationResult,
+            timestamp: new Date(),
+          },
+          createdAt: new Date(),
+          updatedAt: new Date(),
+        });
+      } catch (error) {
+        console.error('Error auto-flagging content:', error);
+      }
+    }
+  }
+
+  // Get moderation reports for admin
+  async getModerationReports(status: string = 'pending', page: number = 1, limit: number = 20) {
+    try {
+      const offset = (page - 1) * limit;
+
+      const reports = await db.select({
+        id: contentModerationReports.id,
+        contentType: contentModerationReports.contentType,
+        contentId: contentModerationReports.contentId,
+        reason: contentModerationReports.reason,
+        description: contentModerationReports.description,
+        status: contentModerationReports.status,
+        severity: contentModerationReports.severity,
+        autoFlagged: contentModerationReports.autoFlagged,
+        createdAt: contentModerationReports.createdAt,
+        reporter: {
+          id: users.id,
+          name: users.name,
+          email: users.email,
+        },
+      })
+      .from(contentModerationReports)
+      .leftJoin(users, eq(contentModerationReports.reporterId, users.id))
+      .where(eq(contentModerationReports.status, status))
+      .orderBy(contentModerationReports.createdAt)
+      .limit(limit)
+      .offset(offset);
+
+      return reports;
+    } catch (error) {
+      console.error('Error fetching moderation reports:', error);
+      throw new Error('Failed to fetch moderation reports');
+    }
+  }
+
+  // Moderate video (convenience method)
+  async moderateVideo(videoData: { title: string; description: string; videoUrl: string }): Promise<ModerationResult> {
+    return this.moderateContent({
+      contentType: 'video',
+      contentId: 'temp',
+      title: videoData.title,
+      description: videoData.description,
+      videoUrl: videoData.videoUrl,
+    });
+  }
+
+  // Private helper methods
+  private calculateConfidenceScore(categoryScores: any): number {
     const maxScore = Math.max(...Object.values(categoryScores) as number[]);
     return 1 - maxScore; // Higher score means more confident it's safe
   }
 
-  // Get suggested actions based on flagged reasons
-  private static getSuggestedActions(flaggedReasons: string[]): string[] {
+  private getSuggestedActions(flaggedReasons: string[]): string[] {
     const actions: string[] = [];
     
     if (flaggedReasons.includes('hate') || flaggedReasons.includes('violence')) {
@@ -176,63 +329,24 @@ export class ContentModerationService {
       actions.push('editorial_review');
     }
 
-    if (actions.length === 0 && flaggedReasons.length > 0) {
-      actions.push('manual_review');
-    }
-
     return actions;
   }
 
-  // Moderate user-generated comments
-  static async moderateComment(comment: string, userId: string): Promise<ModerationResult> {
-    const textResult = await this.moderateText(comment);
+  private determineSeverity(reason: string): string {
+    const highSeverityReasons = ['hate', 'violence', 'sexual', 'harassment'];
+    const mediumSeverityReasons = ['misleading_claims', 'potential_spam'];
     
-    // Additional checks for comments
-    const userHistory = await this.getUserModerationHistory(userId);
-    if (userHistory.recentViolations > 3) {
-      textResult.flaggedReasons.push('repeat_offender');
-      textResult.isApproved = false;
-    }
-
-    return textResult;
+    if (highSeverityReasons.some(r => reason.includes(r))) return 'high';
+    if (mediumSeverityReasons.some(r => reason.includes(r))) return 'medium';
+    return 'low';
   }
 
-  // Get user's moderation history
-  private static async getUserModerationHistory(userId: string): Promise<{ recentViolations: number }> {
-    // In real implementation, query database for user's recent violations
-    return { recentViolations: 0 };
-  }
-
-  // Auto-moderate and take action
-  static async autoModerateAndAct(
-    contentType: 'video' | 'comment' | 'profile',
-    content: any,
-    userId: string
-  ): Promise<{ action: string; reason: string }> {
-    let moderationResult: ModerationResult;
-
-    switch (contentType) {
-      case 'video':
-        moderationResult = await this.moderateVideo(content.videoUrl, content.title, content.description);
-        break;
-      case 'comment':
-        moderationResult = await this.moderateComment(content.text, userId);
-        break;
-      default:
-        moderationResult = await this.moderateText(content.text || '');
-    }
-
-    // Take automatic action based on moderation result
-    if (!moderationResult.isApproved) {
-      if (moderationResult.flaggedReasons.includes('hate') || moderationResult.flaggedReasons.includes('violence')) {
-        return { action: 'immediate_removal', reason: 'Harmful content detected' };
-      } else if (moderationResult.confidenceScore < 0.3) {
-        return { action: 'quarantine', reason: 'High-risk content flagged for review' };
-      } else {
-        return { action: 'flag_for_review', reason: 'Content flagged for manual review' };
-      }
-    }
-
-    return { action: 'approved', reason: 'Content passed moderation checks' };
+  private determineSeverityFromReasons(reasons: string[]): string {
+    const highSeverityReasons = ['hate', 'violence', 'sexual', 'harassment'];
+    const mediumSeverityReasons = ['misleading_claims', 'potential_spam'];
+    
+    if (reasons.some(r => highSeverityReasons.includes(r))) return 'high';
+    if (reasons.some(r => mediumSeverityReasons.includes(r))) return 'medium';
+    return 'low';
   }
 }
