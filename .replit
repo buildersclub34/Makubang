@@ -53,13 +53,13 @@ outputType = "console"
 name = "Mobile App"
 author = "agent"
 
+[workflows.workflow.metadata]
+outputType = "console"
+
 [[workflows.workflow.tasks]]
 task = "shell.exec"
 args = "cd mobile && npx @expo/cli start --port 3001"
 waitForPort = 3001
-
-[workflows.workflow.metadata]
-outputType = "console"
 
 [[ports]]
 localPort = 5000
