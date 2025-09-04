@@ -1,28 +1,31 @@
-import React, { useState, useEffect } from 'react';
-import { View, Text, StyleSheet, ScrollView, ActivityIndicator } from 'react-native';
+import { Redirect } from 'expo-router';
+import { View, Text, ActivityIndicator } from 'react-native';
+import { useState, useEffect } from 'react';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import { StatusBar } from 'expo-status-bar';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
+import { StyleSheet, ScrollView } from 'react-native';
 
 export default function HomeScreen() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [isAuthenticated, setIsAuthenticated] = useState(false);
 
   useEffect(() => {
-    // Simulate app initialization
-    const initializeApp = async () => {
-      try {
-        // Add any initialization logic here
-        await new Promise(resolve => setTimeout(resolve, 1000));
-        setLoading(false);
-      } catch (err) {
-        console.error('App initialization error:', err);
-        setError('Failed to initialize app');
-        setLoading(false);
-      }
-    };
-
-    initializeApp();
+    checkAuthStatus();
   }, []);
+
+  const checkAuthStatus = async () => {
+    try {
+      const token = await AsyncStorage.getItem('authToken');
+      setIsAuthenticated(!!token);
+    } catch (error) {
+      console.error('Auth check error:', error);
+      setError('Failed to check authentication status');
+    } finally {
+      setLoading(false);
+    }
+  };
 
   if (loading) {
     return (
@@ -45,45 +48,13 @@ export default function HomeScreen() {
       </SafeAreaProvider>
     );
   }
-  return (
-    <SafeAreaProvider>
-      <ScrollView style={styles.container}>
-        <View style={styles.header}>
-          <Text style={styles.title}>🍕 Makubang</Text>
-          <Text style={styles.subtitle}>Food meets social media</Text>
-        </View>
 
-        <View style={styles.section}>
-          <Text style={styles.sectionTitle}>Welcome to Makubang!</Text>
-          <Text style={styles.description}>
-            Discover amazing food content from your favorite creators and order directly from restaurants.
-          </Text>
-        </View>
-
-        <View style={styles.features}>
-          <View style={styles.feature}>
-            <Text style={styles.featureEmoji}>📱</Text>
-            <Text style={styles.featureTitle}>Social Food Content</Text>
-            <Text style={styles.featureDesc}>Watch food videos from creators</Text>
-          </View>
-
-          <View style={styles.feature}>
-            <Text style={styles.featureEmoji}>🍔</Text>
-            <Text style={styles.featureTitle}>Order Food</Text>
-            <Text style={styles.featureDesc}>Order directly from restaurants</Text>
-          </View>
-
-          <View style={styles.feature}>
-            <Text style={styles.featureEmoji}>🚚</Text>
-            <Text style={styles.featureTitle}>Live Tracking</Text>
-            <Text style={styles.featureDesc}>Track your order in real-time</Text>
-          </View>
-        </View>
-
-        <StatusBar style="auto" />
-      </ScrollView>
-    </SafeAreaProvider>
-  );
+  // If authenticated, redirect to the main app content. Otherwise, redirect to login.
+  if (isAuthenticated) {
+    return <Redirect href="/(tabs)/feed" />;
+  } else {
+    return <Redirect href="/login" />;
+  }
 }
 
 const styles = StyleSheet.create({

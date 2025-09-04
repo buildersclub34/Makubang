@@ -3,7 +3,7 @@ import { Server as HttpServer } from 'http';
 import { Server as HttpsServer } from 'https';
 import { v4 as uuidv4 } from 'uuid';
 import { logger } from '../../utils/logger';
-import { verifyToken } from '../auth';
+import { verifyToken } from '../auth.js';
 
 type WebSocketMessage = {
   type: string;

@@ -1,62 +1,72 @@
-
 import React from 'react';
 import { View, Text, StyleSheet, ScrollView, TouchableOpacity } from 'react-native';
-import { StatusBar } from 'expo-status-bar';
-import { SafeAreaProvider } from 'react-native-safe-area-context';
+import { useState, useEffect } from 'react';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 
-export default function DashboardScreen() {
+export default function DashboardTab() {
+  const [user, setUser] = useState(null);
+
+  useEffect(() => {
+    loadUserData();
+  }, []);
+
+  const loadUserData = async () => {
+    try {
+      const userData = await AsyncStorage.getItem('userData');
+      if (userData) {
+        setUser(JSON.parse(userData));
+      }
+    } catch (error) {
+      console.error('Error loading user data:', error);
+    }
+  };
+
+  const handleLogout = async () => {
+    try {
+      await AsyncStorage.multiRemove(['authToken', 'userData']);
+      // Navigate to login or refresh app
+    } catch (error) {
+      console.error('Logout error:', error);
+    }
+  };
+
   return (
-    <SafeAreaProvider>
-      <ScrollView style={styles.container}>
-        <View style={styles.header}>
-          <Text style={styles.title}>🚚 Delivery Dashboard</Text>
-          <Text style={styles.subtitle}>Welcome back, Partner!</Text>
-        </View>
-        
-        <View style={styles.statsContainer}>
-          <View style={styles.statCard}>
-            <Text style={styles.statValue}>12</Text>
-            <Text style={styles.statLabel}>Today's Orders</Text>
-          </View>
-          
-          <View style={styles.statCard}>
-            <Text style={styles.statValue}>₹2,450</Text>
-            <Text style={styles.statLabel}>Today's Earnings</Text>
-          </View>
-          
-          <View style={styles.statCard}>
-            <Text style={styles.statValue}>4.8</Text>
-            <Text style={styles.statLabel}>Your Rating</Text>
-          </View>
+    <ScrollView style={styles.container}>
+      <View style={styles.header}>
+        <Text style={styles.title}>Dashboard</Text>
+        <Text style={styles.subtitle}>Welcome, {user?.name || 'Driver'}!</Text>
+      </View>
+
+      <View style={styles.statsContainer}>
+        <View style={styles.statCard}>
+          <Text style={styles.statNumber}>12</Text>
+          <Text style={styles.statLabel}>Today's Deliveries</Text>
         </View>
 
-        <View style={styles.quickActions}>
-          <Text style={styles.sectionTitle}>Quick Actions</Text>
-          
-          <TouchableOpacity style={styles.actionButton}>
-            <Text style={styles.actionEmoji}>🟢</Text>
-            <Text style={styles.actionText}>Go Online</Text>
-          </TouchableOpacity>
-          
-          <TouchableOpacity style={styles.actionButton}>
-            <Text style={styles.actionEmoji}>📍</Text>
-            <Text style={styles.actionText}>View Map</Text>
-          </TouchableOpacity>
-          
-          <TouchableOpacity style={styles.actionButton}>
-            <Text style={styles.actionEmoji}>💰</Text>
-            <Text style={styles.actionText}>Check Wallet</Text>
-          </TouchableOpacity>
-          
-          <TouchableOpacity style={styles.actionButton}>
-            <Text style={styles.actionEmoji}>📋</Text>
-            <Text style={styles.actionText}>Order History</Text>
-          </TouchableOpacity>
+        <View style={styles.statCard}>
+          <Text style={styles.statNumber}>₹1,240</Text>
+          <Text style={styles.statLabel}>Today's Earnings</Text>
         </View>
+      </View>
 
-        <StatusBar style="auto" />
-      </ScrollView>
-    </SafeAreaProvider>
+      <View style={styles.quickActions}>
+        <TouchableOpacity style={styles.actionButton}>
+          <Text style={styles.actionText}>Go Online</Text>
+        </TouchableOpacity>
+
+        <TouchableOpacity style={styles.actionButton}>
+          <Text style={styles.actionText}>View Orders</Text>
+        </TouchableOpacity>
+
+        <TouchableOpacity style={styles.actionButton}>
+          <Text style={styles.actionText}>Earnings</Text>
+        </TouchableOpacity>
+      </View>
+
+      <TouchableOpacity style={styles.logoutButton} onPress={handleLogout}>
+        <Text style={styles.logoutText}>Logout</Text>
+      </TouchableOpacity>
+    </ScrollView>
   );
 }
 
@@ -100,7 +110,7 @@ const styles = StyleSheet.create({
     shadowRadius: 4,
     elevation: 3,
   },
-  statValue: {
+  statNumber: {
     fontSize: 24,
     fontWeight: 'bold',
     color: '#4CAF50',
@@ -113,12 +123,6 @@ const styles = StyleSheet.create({
   },
   quickActions: {
     padding: 20,
-  },
-  sectionTitle: {
-    fontSize: 20,
-    fontWeight: 'bold',
-    color: '#333',
-    marginBottom: 15,
   },
   actionButton: {
     backgroundColor: '#fff',
@@ -133,13 +137,28 @@ const styles = StyleSheet.create({
     shadowRadius: 4,
     elevation: 3,
   },
-  actionEmoji: {
-    fontSize: 24,
-    marginRight: 15,
-  },
   actionText: {
     fontSize: 16,
     color: '#333',
     fontWeight: '500',
+  },
+  logoutButton: {
+    backgroundColor: '#f44336', // Red color for logout
+    padding: 15,
+    borderRadius: 10,
+    marginHorizontal: 20,
+    alignItems: 'center',
+    marginTop: 20,
+    marginBottom: 30, // Add some bottom margin
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
+    elevation: 3,
+  },
+  logoutText: {
+    color: '#fff',
+    fontSize: 16,
+    fontWeight: 'bold',
   },
 });
