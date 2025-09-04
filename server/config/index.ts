@@ -10,6 +10,26 @@ export const HOST = process.env.HOST || '0.0.0.0';
 export const JWT_SECRET = process.env.JWT_SECRET || 'your-secret-key';
 export const JWT_EXPIRE = process.env.JWT_EXPIRE || '7d';
 
+// Consolidated config object
+export const config = {
+  jwt: {
+    secret: JWT_SECRET,
+    expiresIn: JWT_EXPIRE,
+    refreshSecret: process.env.JWT_REFRESH_SECRET || 'your-refresh-secret-key',
+    refreshExpiresIn: process.env.JWT_REFRESH_EXPIRE || '30d',
+  },
+  port: PORT,
+  host: HOST,
+  database: DB_CONFIG,
+  email: EMAIL_CONFIG,
+  session: SESSION_CONFIG,
+  upload: UPLOAD_CONFIG,
+  features: FEATURES,
+  security: SECURITY_HEADERS,
+  cors: CORS_WHITELIST,
+  rateLimit: RATE_LIMIT,
+};
+
 // Database configuration
 export const DB_CONFIG = {
   host: process.env.DB_HOST || 'localhost',
