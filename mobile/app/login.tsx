@@ -1,4 +1,3 @@
-
 import React, { useState } from 'react';
 import {
   View,
@@ -12,9 +11,8 @@ import {
 } from 'react-native';
 import { router } from 'expo-router';
 import { useAuth } from '../src/contexts/AuthContext';
-import { LinearGradient } from 'expo-linear-gradient';
 
-const LoginScreen = () => {
+export default function Login() {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [isLoading, setIsLoading] = useState(false);
@@ -38,68 +36,56 @@ const LoginScreen = () => {
   };
 
   return (
-    <LinearGradient
-      colors={['#0D0D0D', '#1A1A1A']}
-      style={styles.container}
-    >
-      <SafeAreaView style={styles.safeArea}>
-        <View style={styles.content}>
-          <Text style={styles.title}>Welcome to Makubang</Text>
-          
-          <TextInput
-            style={styles.input}
-            placeholder="Email"
-            placeholderTextColor="#666"
-            value={email}
-            onChangeText={setEmail}
-            keyboardType="email-address"
-            autoCapitalize="none"
-          />
-          
-          <TextInput
-            style={styles.input}
-            placeholder="Password"
-            placeholderTextColor="#666"
-            value={password}
-            onChangeText={setPassword}
-            secureTextEntry
-          />
-          
-          <TouchableOpacity
-            style={styles.button}
-            onPress={handleLogin}
-            disabled={isLoading}
-          >
-            <LinearGradient
-              colors={['#00D4FF', '#0099CC']}
-              style={styles.buttonGradient}
-            >
-              {isLoading ? (
-                <ActivityIndicator color="#fff" />
-              ) : (
-                <Text style={styles.buttonText}>Login</Text>
-              )}
-            </LinearGradient>
-          </TouchableOpacity>
+    <SafeAreaView style={styles.container}>
+      <View style={styles.content}>
+        <Text style={styles.title}>Welcome to Makubang</Text>
 
-          <TouchableOpacity
-            onPress={() => router.push('/register')}
-            style={styles.linkButton}
-          >
-            <Text style={styles.linkText}>Don't have an account? Sign up</Text>
-          </TouchableOpacity>
-        </View>
-      </SafeAreaView>
-    </LinearGradient>
+        <TextInput
+          style={styles.input}
+          placeholder="Email"
+          placeholderTextColor="#666"
+          value={email}
+          onChangeText={setEmail}
+          keyboardType="email-address"
+          autoCapitalize="none"
+        />
+
+        <TextInput
+          style={styles.input}
+          placeholder="Password"
+          placeholderTextColor="#666"
+          value={password}
+          onChangeText={setPassword}
+          secureTextEntry
+        />
+
+        <TouchableOpacity
+          style={styles.button}
+          onPress={handleLogin}
+          disabled={isLoading}
+        >
+          {isLoading ? (
+            <ActivityIndicator color="#fff" />
+          ) : (
+            <Text style={styles.buttonText}>Login</Text>
+          )}
+        </TouchableOpacity>
+
+        <TouchableOpacity
+          style={styles.linkButton}
+          onPress={() => router.push('/register')}
+        >
+          <Text style={styles.linkText}>Don't have an account? Sign up</Text>
+        </TouchableOpacity>
+      </View>
+    </SafeAreaView>
   );
-};
+}
 
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-  },
-  safeArea: {
-    flex: 1,
+    backgroundColor: '#0D0D0D',
   },
   content: {
     flex: 1,
@@ -107,35 +93,33 @@ const styles = StyleSheet.create({
     paddingHorizontal: 20,
   },
   title: {
-    fontSize: 28,
+    fontSize: 24,
     fontWeight: 'bold',
     color: '#00D4FF',
     textAlign: 'center',
     marginBottom: 40,
   },
   input: {
-    backgroundColor: 'rgba(255, 255, 255, 0.1)',
-    borderRadius: 12,
-    paddingHorizontal: 16,
+    backgroundColor: '#1A1A1A',
+    borderRadius: 8,
+    paddingHorizontal: 15,
     paddingVertical: 12,
-    marginBottom: 16,
+    marginBottom: 15,
     fontSize: 16,
     color: '#fff',
     borderWidth: 1,
-    borderColor: 'rgba(255, 255, 255, 0.2)',
+    borderColor: '#333',
   },
   button: {
-    borderRadius: 12,
-    marginTop: 20,
-    overflow: 'hidden',
-  },
-  buttonGradient: {
-    paddingVertical: 12,
+    backgroundColor: '#00D4FF',
+    borderRadius: 8,
+    paddingVertical: 15,
     alignItems: 'center',
+    marginTop: 20,
   },
   buttonText: {
     color: '#fff',
-    fontSize: 16,
+    fontSize: 18,
     fontWeight: 'bold',
   },
   linkButton: {
@@ -144,8 +128,6 @@ const styles = StyleSheet.create({
   },
   linkText: {
     color: '#00D4FF',
-    fontSize: 14,
+    fontSize: 16,
   },
 });
-
-export default LoginScreen;

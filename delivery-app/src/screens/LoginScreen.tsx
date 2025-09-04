@@ -42,6 +42,7 @@ const LoginScreen = () => {
         <TextInput
           style={styles.input}
           placeholder="Email"
+          placeholderTextColor="#666"
           value={email}
           onChangeText={setEmail}
           keyboardType="email-address"
@@ -51,6 +52,7 @@ const LoginScreen = () => {
         <TextInput
           style={styles.input}
           placeholder="Password"
+          placeholderTextColor="#666"
           value={password}
           onChangeText={setPassword}
           secureTextEntry
@@ -90,23 +92,26 @@ const styles = StyleSheet.create({
     marginBottom: 40,
   },
   input: {
-    backgroundColor: '#fff',
+    backgroundColor: '#333',
     borderRadius: 8,
-    paddingHorizontal: 16,
+    paddingHorizontal: 15,
     paddingVertical: 12,
-    marginBottom: 16,
+    marginBottom: 15,
     fontSize: 16,
+    color: '#fff',
+    borderWidth: 1,
+    borderColor: '#555',
   },
   button: {
     backgroundColor: '#4CAF50',
     borderRadius: 8,
-    paddingVertical: 12,
+    paddingVertical: 15,
     alignItems: 'center',
     marginTop: 20,
   },
   buttonText: {
     color: '#fff',
-    fontSize: 16,
+    fontSize: 18,
     fontWeight: 'bold',
   },
 });
