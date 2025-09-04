@@ -1,0 +1,56 @@
+Console Error
+Can't perform a React state update on a component that hasn't mounted yet. This indicates that you have a side-effect in your render function that asynchronously later calls tries to update the component. Move this work to useEffect instead.
+Call Stack
+
+Source Map
+This call stack is not symbolicated. Some features are unavailable such as viewing the function name or tapping to open files.
+Object.addLog
+https://c8d7b2e8-b56a-4587-ae35-55fe3b2fe310-00-38o1w2bdrwzls.pike.replit.dev:3001/node_modules/expo-router/entry.bundle:3795:32
+registerError
+https://c8d7b2e8-b56a-4587-ae35-55fe3b2fe310-00-38o1w2bdrwzls.pike.replit.dev:3001/node_modules/expo-router/entry.bundle:3612:22
+console.error
+https://c8d7b2e8-b56a-4587-ae35-55fe3b2fe310-00-38o1w2bdrwzls.pike.replit.dev:3001/node_modules/expo-router/entry.bundle:3537:31
+printWarning
+https://c8d7b2e8-b56a-4587-ae35-55fe3b2fe310-00-38o1w2bdrwzls.pike.replit.dev:3001/node_modules/expo-router/entry.bundle:7641:36
+error
+https://c8d7b2e8-b56a-4587-ae35-55fe3b2fe310-00-38o1w2bdrwzls.pike.replit.dev:3001/node_modules/expo-router/entry.bundle:7618:13
+warnAboutUpdateOnNotYetMountedFiberInDEV
+https://c8d7b2e8-b56a-4587-ae35-55fe3b2fe310-00-38o1w2bdrwzls.pike.replit.dev:3001/node_modules/expo-router/entry.bundle:31252:13
+markUpdateLaneFromFiberToRoot
+https://c8d7b2e8-b56a-4587-ae35-55fe3b2fe310-00-38o1w2bdrwzls.pike.replit.dev:3001/node_modules/expo-router/entry.bundle:20207:17
+enqueueConcurrentClassUpdate
+https://c8d7b2e8-b56a-4587-ae35-55fe3b2fe310-00-38o1w2bdrwzls.pike.replit.dev:3001/node_modules/expo-router/entry.bundle:20176:16
+enqueueUpdate
+https://c8d7b2e8-b56a-4587-ae35-55fe3b2fe310-00-38o1w2bdrwzls.pike.replit.dev:3001/node_modules/expo-router/entry.bundle:20306:18
+Object.enqueueSetState
+https://c8d7b2e8-b56a-4587-ae35-55fe3b2fe310-00-38o1w2bdrwzls.pike.replit.dev:3001/node_modules/expo-router/entry.bundle:23177:22
+Component.setState
+https://c8d7b2e8-b56a-4587-ae35-55fe3b2fe310-00-38o1w2bdrwzls.pike.replit.dev:3001/node_modules/expo-router/entry.bundle:4370:22
+<unknown>
+https://c8d7b2e8-b56a-4587-ae35-55fe3b2fe310-00-38o1w2bdrwzls.pike.replit.dev:3001/node_modules/expo-router/entry.bundle:3975:16
+new Promise
+<anonymous>
+LogBoxStateSubscription.retry
+https://c8d7b2e8-b56a-4587-ae35-55fe3b2fe310-00-38o1w2bdrwzls.pike.replit.dev:3001/node_modules/expo-router/entry.bundle:3974:16
+<unknown>
+https://c8d7b2e8-b56a-4587-ae35-55fe3b2fe310-00-38o1w2bdrwzls.pike.replit.dev:3001/node_modules/expo-router/entry.bundle:3957:20
+EventEmitter.emit
+https://c8d7b2e8-b56a-4587-ae35-55fe3b2fe310-00-38o1w2bdrwzls.pike.replit.dev:3001/node_modules/expo-router/entry.bundle:3440:33
+Object.hide
+https://c8d7b2e8-b56a-4587-ae35-55fe3b2fe310-00-38o1w2bdrwzls.pike.replit.dev:3001/node_modules/expo-router/entry.bundle:3328:33
+HMRClient.<anonymous>
+https://c8d7b2e8-b56a-4587-ae35-55fe3b2fe310-00-38o1w2bdrwzls.pike.replit.dev:3001/node_modules/expo-router/entry.bundle:1514:30
+HMRClient.emit
+https://c8d7b2e8-b56a-4587-ae35-55fe3b2fe310-00-38o1w2bdrwzls.pike.replit.dev:3001/node_modules/expo-router/entry.bundle:1851:31
+HMRClient._ws.onmessage
+https://c8d7b2e8-b56a-4587-ae35-55fe3b2fe310-00-38o1w2bdrwzls.pike.replit.dev:3001/node_modules/expo-router/entry.bundle:1665:18
+Showing all frames
+Component Stack
+
+Source Map
+This call stack is not symbolicated. Some features are unavailable such as viewing the function name or tapping to open files.
+LogBoxStateSubscription
+https://c8d7b2e8-b56a-4587-ae35-55fe3b2fe310-00-38o1w2bdrwzls.pike.replit.dev:3001/node_modules/expo-router/entry.bundle:3953:9
+AppContainer
+https://c8d7b2e8-b56a-4587-ae35-55fe3b2fe310-00-38o1w2bdrwzls.pike.replit.dev:3001/node_modules/expo-router/entry.bundle:76843:5
+Showing all frames
