@@ -1,34 +1,47 @@
+
 {
   "compilerOptions": {
-    "target": "es5",
-    "lib": ["dom", "dom.iterable", "esnext"],
-    "allowJs": true,
+    "target": "ES2020",
+    "useDefineForClassFields": true,
+    "lib": ["ES2020", "DOM", "DOM.Iterable"],
+    "module": "ESNext",
     "skipLibCheck": true,
-    "strict": true,
-    "forceConsistentCasingInFileNames": true,
-    "noEmit": true,
-    "esModuleInterop": true,
-    "module": "esnext",
-    "moduleResolution": "node",
+    "moduleResolution": "bundler",
+    "allowImportingTsExtensions": true,
     "resolveJsonModule": true,
     "isolatedModules": true,
-    "jsx": "preserve",
-    "incremental": true,
+    "noEmit": true,
+    "jsx": "react-jsx",
+    "strict": true,
+    "noUnusedLocals": false,
+    "noUnusedParameters": false,
+    "noFallthroughCasesInSwitch": true,
     "baseUrl": ".",
     "paths": {
       "@/*": ["./client/src/*"],
-      "@/server/*": ["./server/*"],
-      "@/shared/*": ["./shared/*"],
-      "@/db": ["./server/db"]
+      "@/components/*": ["./client/src/components/*"],
+      "@/pages/*": ["./client/src/pages/*"],
+      "@/lib/*": ["./client/src/lib/*"],
+      "@/hooks/*": ["./client/src/hooks/*"],
+      "@/types/*": ["./client/src/types/*"],
+      "@/utils/*": ["./client/src/utils/*"],
+      "@/contexts/*": ["./client/src/contexts/*"],
+      "@shared/*": ["./shared/*"],
+      "@server/*": ["./server/*"]
     },
-    "typeRoots": ["./node_modules/@types"],
-    "types": ["node", "next", "react", "react-dom"],
-    "allowSyntheticDefaultImports": true
+    "esModuleInterop": true,
+    "allowSyntheticDefaultImports": true,
+    "forceConsistentCasingInFileNames": true,
+    "declaration": true,
+    "declarationMap": true,
+    "outDir": "./dist"
   },
   "include": [
-    "next-env.d.ts",
-    "**/*.ts",
-    "**/*.tsx"
+    "client/src/**/*",
+    "server/**/*",
+    "shared/**/*",
+    "mobile/src/**/*",
+    "delivery-app/src/**/*"
   ],
-  "exclude": ["node_modules"]
+  "exclude": ["node_modules", "dist", "build"]
 }

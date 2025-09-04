@@ -1,362 +1,138 @@
-
 import { Server, Socket } from 'socket.io';
-import { Server as HTTPServer } from 'http';
 import jwt from 'jsonwebtoken';
 import { db } from './db';
 import { users } from '../shared/schema';
 import { eq } from 'drizzle-orm';
-import { OrderStatus, OrderTrackingData } from '../shared/types/order';
 
-const JWT_SECRET = process.env.JWT_SECRET || 'your-secret-key';
+const JWT_SECRET = process.env.JWT_SECRET || 'your-secret-key'; // Keep JWT_SECRET for local usage if env var is not set
 
 interface AuthenticatedSocket extends Socket {
   userId?: string;
   userRole?: string;
-  orderSubscriptions?: Set<string>; // Track which orders this client is subscribed to
 }
 
-export class WebSocketService {
-  private io: Server;
-  private connections: Map<string, AuthenticatedSocket> = new Map();
-  private orderSubscriptions: Map<string, Set<string>> = new Map(); // orderId -> Set of socketIds
+export function setupWebSocket(io: Server) {
+  // Authentication middleware for socket connections
+  io.use(async (socket: AuthenticatedSocket, next) => {
+    try {
+      const token = socket.handshake.auth.token || socket.handshake.headers.authorization?.split(' ')[1];
 
-  constructor(httpServer: HTTPServer) {
-    this.io = new Server(httpServer, {
-      cors: {
-        origin: "*",
-        methods: ["GET", "POST"]
+      if (!token) {
+        return next(new Error('Authentication token required'));
       }
+
+      const decoded = jwt.verify(token, JWT_SECRET) as any;
+
+      // Verify user exists and is active
+      const [user] = await db.select({
+        id: users.id,
+        role: users.role,
+        isActive: users.isActive
+      })
+      .from(users)
+      .where(eq(users.id, decoded.userId))
+      .limit(1);
+
+      if (!user || !user.isActive) {
+        return next(new Error('Invalid user'));
+      }
+
+      socket.userId = user.id;
+      socket.userRole = user.role;
+
+      next();
+    } catch (error) {
+      console.error('Socket authentication error:', error);
+      next(new Error('Authentication failed'));
+    }
+  });
+
+  io.on('connection', (socket: AuthenticatedSocket) => {
+    console.log(`User ${socket.userId} connected with role ${socket.userRole}`);
+
+    // Join user-specific room
+    socket.join(`user:${socket.userId}`);
+
+    // Join role-specific room
+    if (socket.userRole) {
+      socket.join(`role:${socket.userRole}`);
+    }
+
+    // Handle order tracking
+    socket.on('track_order', (orderId: string) => {
+      socket.join(`order:${orderId}`);
+      console.log(`User ${socket.userId} joined order room: order:${orderId}`);
     });
 
-    this.setupMiddleware();
-    this.setupEventHandlers();
-  }
-
-  private setupMiddleware() {
-    // Authentication middleware
-    this.io.use(async (socket: AuthenticatedSocket, next) => {
-      try {
-        const token = socket.handshake.auth.token || socket.handshake.headers.authorization?.split(' ')[1];
-        
-        if (!token) {
-          return next(new Error('Authentication error'));
-        }
-
-        const decoded = jwt.verify(token, JWT_SECRET) as any;
-        const [user] = await db.select()
-          .from(users)
-          .where(eq(users.id, decoded.userId))
-          .limit(1);
-
-        if (!user) {
-          return next(new Error('User not found'));
-        }
-
-        socket.userId = user.id;
-        socket.userRole = user.role;
-        next();
-      } catch (error) {
-        next(new Error('Authentication error'));
-      }
-    });
-  }
-
-  private setupEventHandlers() {
-    this.io.on('connection', (socket: AuthenticatedSocket) => {
-      const socketId = socket.id;
-      this.connections.set(socketId, socket);
-      socket.orderSubscriptions = new Set();
-
-      socket.on('disconnect', () => {
-        this.handleDisconnect(socketId);
-      });
-
-      // Handle authentication
-      socket.on('authenticate', async (token: string) => {
-        try {
-          const decoded = jwt.verify(token, JWT_SECRET) as any;
-          const [user] = await db.select()
-            .from(users)
-            .where(eq(users.id, decoded.userId))
-            .limit(1);
-
-          if (!user) {
-            socket.emit('auth_error', 'User not found');
-            return;
-          }
-
-          socket.userId = user.id;
-          socket.userRole = user.role;
-          this.connections.set(socketId, socket);
-          socket.emit('authenticated', { userId: user.id, role: user.role });
-        } catch (error) {
-          console.error('Authentication error:', error);
-          socket.emit('auth_error', 'Invalid token');
-        }
-      });
-
-      // Handle order subscription
-      socket.on('subscribe_order', (orderId: string) => {
-        if (!socket.userId) {
-          socket.emit('error', 'Not authenticated');
-          return;
-        }
-        this.subscribeToOrder(socketId, orderId);
-      });
-
-      // Handle order unsubscription
-      socket.on('unsubscribe_order', (orderId: string) => {
-        this.unsubscribeFromOrder(socketId, orderId);
-      });
-
-      // Handle location updates from delivery partners
-      socket.on('update_location', (data: { orderId: string; location: { lat: number; lng: number } }) => {
-        if (!socket.userId) {
-          socket.emit('error', 'Not authenticated');
-          return;
-        }
-        this.broadcastToOrderSubscribers(data.orderId, 'location_update', {
-          orderId: data.orderId,
-          location: data.location,
-          updatedAt: new Date().toISOString()
-        });
-      });
-
-      console.log(`User ${socket.userId} connected`);
-      
-      // Join user-specific room
-      socket.join(`user_${socket.userId}`);
-      
-      // Join role-specific rooms
+    // Handle delivery partner location updates
+    socket.on('location_update', (data: { orderId: string; lat: number; lng: number }) => {
       if (socket.userRole === 'delivery_partner') {
-        socket.join('delivery_partners');
-      } else if (socket.userRole === 'restaurant') {
-        socket.join('restaurants');
-      }
-
-      // Handle location updates (for delivery partners)
-      socket.on('location_update', (data) => {
-        if (socket.userRole === 'delivery_partner') {
-          // Broadcast location to active orders
-          socket.broadcast.to(`order_${data.orderId}`).emit('partner_location', {
-            partnerId: socket.userId,
-            location: data.location,
-            timestamp: new Date()
-          });
-        }
-      });
-
-      // Handle order status updates
-      socket.on('order_status_update', (data) => {
-        // Broadcast to relevant parties
-        this.io.to(`order_${data.orderId}`).emit('order_status_changed', {
-          orderId: data.orderId,
-          status: data.status,
-          timestamp: new Date(),
-          updatedBy: socket.userId
-        });
-      });
-
-      // Handle chat messages
-      socket.on('chat_message', (data) => {
-        // Broadcast to order participants
-        socket.broadcast.to(`order_${data.orderId}`).emit('new_message', {
-          ...data,
-          senderId: socket.userId,
+        console.log(`Broadcasting location for order ${data.orderId} from user ${socket.userId}`);
+        socket.to(`order:${data.orderId}`).emit('delivery_location', {
+          userId: socket.userId,
+          lat: data.lat,
+          lng: data.lng,
           timestamp: new Date()
         });
-      });
-
-      // Handle delivery partner availability
-      socket.on('availability_update', (data) => {
-        if (socket.userRole === 'delivery_partner') {
-          socket.broadcast.to('restaurants').emit('partner_availability_changed', {
-            partnerId: socket.userId,
-            isAvailable: data.isAvailable,
-            location: data.location
-          });
-        }
-      });
-
-      // Handle typing indicators
-      socket.on('typing_start', (data) => {
-        socket.broadcast.to(`order_${data.orderId}`).emit('user_typing', {
-          userId: socket.userId,
-          orderId: data.orderId
-        });
-      });
-
-      socket.on('typing_stop', (data) => {
-        socket.broadcast.to(`order_${data.orderId}`).emit('user_stopped_typing', {
-          userId: socket.userId,
-          orderId: data.orderId
-        });
-      });
-
-      // Handle video streaming events
-      socket.on('video_like', (data) => {
-        socket.broadcast.emit('video_liked', {
-          videoId: data.videoId,
-          userId: socket.userId,
-          likeCount: data.likeCount
-        });
-      });
-
-      socket.on('video_comment', (data) => {
-        socket.broadcast.emit('new_video_comment', {
-          videoId: data.videoId,
-          comment: data.comment,
-          userId: socket.userId,
-          timestamp: new Date()
-        });
-      });
-
-      // Handle live streaming
-      socket.on('start_live_stream', (data) => {
-        socket.broadcast.emit('live_stream_started', {
-          streamId: data.streamId,
-          creatorId: socket.userId,
-          title: data.title
-        });
-      });
-
-      socket.on('join_live_stream', (data) => {
-        socket.join(`stream_${data.streamId}`);
-        socket.broadcast.to(`stream_${data.streamId}`).emit('user_joined_stream', {
-          userId: socket.userId,
-          streamId: data.streamId
-        });
-      });
-
-      socket.on('leave_live_stream', (data) => {
-        socket.leave(`stream_${data.streamId}`);
-        socket.broadcast.to(`stream_${data.streamId}`).emit('user_left_stream', {
-          userId: socket.userId,
-          streamId: data.streamId
-        });
-      });
-
-      // Handle disconnection
-      socket.on('disconnect', () => {
-        console.log(`User ${socket.userId} disconnected`);
-        this.connections.delete(socket.userId!);
-        
-        // Notify relevant parties about disconnection
-        if (socket.userRole === 'delivery_partner') {
-          socket.broadcast.to('restaurants').emit('partner_disconnected', {
-            partnerId: socket.userId
-          });
-        }
-      });
-
-      // Handle errors
-      socket.on('error', (error) => {
-        console.error(`Socket error for user ${socket.userId}:`, error);
-      });
-    });
-  }
-
-  private handleDisconnect(socketId: string) {
-    const socket = this.connections.get(socketId);
-    if (socket) {
-      // Clean up any order subscriptions
-      if (socket.orderSubscriptions) {
-        socket.orderSubscriptions.forEach(orderId => {
-          this.unsubscribeFromOrder(socketId, orderId);
-        });
       }
-      this.connections.delete(socketId);
-    }
-  }
+    });
 
-  private subscribeToOrder(socketId: string, orderId: string) {
-    const socket = this.connections.get(socketId);
-    if (!socket) return;
+    // Handle order status updates
+    socket.on('order_status_update', (data: { orderId: string; status: string }) => {
+      console.log(`Order status update for order ${data.orderId}: ${data.status} by ${socket.userId}`);
+      socket.to(`order:${data.orderId}`).emit('order_status_changed', {
+        orderId: data.orderId,
+        status: data.status,
+        timestamp: new Date(),
+        updatedBy: socket.userId
+      });
+    });
 
-    if (!this.orderSubscriptions.has(orderId)) {
-      this.orderSubscriptions.set(orderId, new Set());
-    }
+    // Handle chat messages within an order
+    socket.on('chat_message', (data: { orderId: string; message: string }) => {
+      console.log(`Chat message for order ${data.orderId} from ${socket.userId}: ${data.message}`);
+      socket.to(`order:${data.orderId}`).emit('new_message', {
+        orderId: data.orderId,
+        message: data.message,
+        senderId: socket.userId,
+        timestamp: new Date()
+      });
+    });
 
-    this.orderSubscriptions.get(orderId)?.add(socketId);
-    socket.orderSubscriptions?.add(orderId);
-  }
 
-  private unsubscribeFromOrder(socketId: string, orderId: string) {
-    const socket = this.connections.get(socketId);
-    if (socket?.orderSubscriptions) {
-      socket.orderSubscriptions.delete(orderId);
-    }
+    // Handle notifications
+    socket.on('mark_notification_read', (notificationId: string) => {
+      // Placeholder for marking notification as read
+      console.log(`Marking notification ${notificationId} as read by ${socket.userId}`);
+      socket.emit('notification_marked_read', { notificationId });
+    });
 
-    const subscribers = this.orderSubscriptions.get(orderId);
-    if (subscribers) {
-      subscribers.delete(socketId);
-      if (subscribers.size === 0) {
-        this.orderSubscriptions.delete(orderId);
+    socket.on('disconnect', () => {
+      console.log(`User ${socket.userId} disconnected`);
+      // Clean up rooms if necessary, e.g., if a delivery partner goes offline
+      if (socket.userRole === 'delivery_partner') {
+        // Potentially broadcast partner_disconnected event
       }
-    }
-  }
-
-  private broadcastToOrderSubscribers(orderId: string, event: string, data: any) {
-    const subscribers = this.orderSubscriptions.get(orderId);
-    if (!subscribers) return;
-
-    subscribers.forEach(socketId => {
-      const socket = this.connections.get(socketId);
-      socket?.emit(event, data);
     });
-  }
+  });
 
-  // Public methods for broadcasting
-  public broadcastUpdate(room: string, data: any) {
-    this.io.to(room).emit('update', data);
-  }
-
-  public sendToUser(userId: string, data: { type: string; data: any }) {
-    const socket = this.connections.get(userId);
-    if (socket) {
-      socket.emit(data.type, data.data);
-    }
-  }
-
-  public notifyOrderUpdate(orderId: string, data: any) {
-    this.broadcastToOrderSubscribers(orderId, 'order:update', data);
-  }
-
-  public broadcastToRole(role: string, event: string, data: any) {
-    this.io.to(role).emit(event, data);
-  }
-
-  public sendOrderUpdate(orderId: string, data: any) {
-    this.io.to(`order_${orderId}`).emit('order_update', data);
-  }
-
-  public sendLocationUpdate(orderId: string, location: any, partnerId: string) {
-    this.io.to(`order_${orderId}`).emit('delivery_location_update', {
-      location,
-      partnerId,
-      timestamp: new Date()
-    });
-  }
-
-  public sendNotification(userId: string, notification: any) {
-    this.sendToUser(userId, 'notification', notification);
-  }
-
-  public broadcastLiveEvent(event: string, data: any) {
-    this.io.emit(event, data);
-  }
-
-  public getConnectionCount(): number {
-    return this.connections.size;
-  }
-
-  public getConnectedUsers(): string[] {
-    return Array.from(this.connections.keys());
-  }
-
-  public isUserConnected(userId: string): boolean {
-    return this.connections.has(userId);
-  }
+  return io;
 }
 
-export default WebSocketService;
+// Helper function to send notifications to specific users
+export function sendToUser(io: Server, userId: string, event: string, data: any) {
+  console.log(`Sending event "${event}" to user ${userId}`);
+  io.to(`user:${userId}`).emit(event, data);
+}
+
+// Helper function to send notifications to users with specific role
+export function sendToRole(io: Server, role: string, event: string, data: any) {
+  console.log(`Sending event "${event}" to role ${role}`);
+  io.to(`role:${role}`).emit(event, data);
+}
+
+// Helper function to send order updates
+export function sendOrderUpdate(io: Server, orderId: string, update: any) {
+  console.log(`Sending order update for order ${orderId}`);
+  io.to(`order:${orderId}`).emit('order_update', update);
+}
