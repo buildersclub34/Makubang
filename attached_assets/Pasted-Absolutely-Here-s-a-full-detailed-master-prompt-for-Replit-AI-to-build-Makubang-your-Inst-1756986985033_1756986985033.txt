@@ -1,0 +1,239 @@
+Absolutely! Here’s a **full, detailed master prompt** for Replit AI to build **Makubang** (your Instagram + food ordering content-first platform) in one go, including Razorpay and your in-house delivery app. I’ve made it extremely detailed, with architecture, flow, features, and all nuances from your chat history. You can copy-paste this directly into Replit.
+
+---
+
+**Master Prompt for Replit AI – Makubang Food Discovery & Ordering Platform**
+
+---
+
+**Project Name:** Makubang
+**Project Type:** Food discovery & ordering app (Instagram-style short video feed + instant order from curated restaurants)
+
+**Objective:**
+Build a content-first, shoppable food video platform where users scroll reels, discover food, follow friends/influencers/restaurants, and instantly order dishes via Razorpay. Delivery is handled by our own **Delivery Partner App**, not 3PL or ONDC. Target curated restaurants in HSR Layout Bangalore first, then expand citywide.
+
+---
+
+## **1. Platform Overview**
+
+**Frontend:**
+
+* Mobile application (iOS + Android via React Native or Flutter).
+* UI similar to Instagram/Youtube for food:
+
+  * Onboarding screens → Login/Signup → Explore/Select/Search → Food video feed → Order flow → Payment → Delivery tracking.
+* Features:
+
+  * User profiles with follow/unfollow.
+  * Like, comment, share reels (social interaction like Instagram).
+  * Recommended tags & trending food.
+  * Explore button → random food videos nearby.
+  * Slide left on a video → tag dish to cart.
+  * Slide right → buy instantly → Razorpay checkout → delivery tracking.
+  * Notifications: Order updates, friend activity, trending food.
+
+**Backend:**
+
+* Python with **FastAPI** framework.
+* PostgreSQL or MySQL database.
+* Redis cache for feed personalization & quick recommendations.
+* AWS S3 / Cloud Storage for video storage.
+* Video streaming optimized (HLS/Adaptive bitrate streaming).
+* REST & WebSocket APIs:
+
+  * REST for CRUD (user, restaurant, order, subscription, payment, content).
+  * WebSockets for real-time updates (comments, likes, delivery status).
+
+**Payment:**
+
+* Razorpay integration (INR support, UPI, credit/debit cards, wallets).
+* GST calculation per order.
+* Subscription model for restaurants:
+
+  * Starter: ₹1,000 for 20 orders.
+  * Pro: ₹3,000 for 80 orders.
+  * Unlimited: monthly subscription (customizable).
+
+**Delivery:**
+
+* Orders routed to **our Delivery Partner App**.
+* API communication for:
+
+  * Assigning delivery partners.
+  * Tracking delivery status in real-time.
+  * Proof of delivery.
+  * Delivery notifications to users & restaurants.
+
+**Restaurant Features:**
+
+* Curated restaurant dashboard.
+* Upload menu & food videos.
+* Subscription management & orders remaining.
+* Analytics: Views, clicks, order conversions per video.
+* Track delivery status per order.
+
+**Influencer Features:**
+
+* Profile dashboard.
+* Upload food videos linked to restaurants.
+* Commission tracking per order generated.
+* Analytics on reach, engagement, and conversions.
+
+---
+
+## **2. Architecture Diagram (Written)**
+
+**\[Frontend Layer]**
+
+* Mobile App (React Native)
+
+  * Screens: Onboarding → Login/Signup → Feed → Explore → Video Player → Cart → Checkout → Order Tracking
+
+**\[Backend Layer]**
+
+* FastAPI microservices:
+
+  * **User Service** → Profiles, followers, social activity
+  * **Content Service** → Videos, reels, tagging, recommendations
+  * **Restaurant Service** → Menu, subscription, analytics
+  * **Order Service** → Cart, order creation, payment processing
+  * **Payment Service** → Razorpay integration, GST calculation
+  * **Delivery Service** → Integrates with in-house Delivery App API
+  * **Notification Service** → Push notifications, order updates
+* PostgreSQL / MySQL database
+* Redis cache for recommendations & feed optimization
+* S3 / Cloud storage for video content
+* Video processing (transcoding, thumbnails, streaming URLs)
+
+**\[External Integrations]**
+
+* Razorpay → Payment gateway
+* Delivery Partner App → Delivery assignment & tracking API
+
+**\[Data Flow]**
+
+1. User scrolls reels → fetch personalized feed from Content Service (FastAPI + Redis).
+2. User likes/comments/shares → update activity & feed ranking.
+3. User slides left → add dish to cart → update Order Service.
+4. User slides right → initiate instant order → checkout via Razorpay → notify Restaurant Service → trigger Delivery Service.
+5. Delivery Partner receives order → updates status → Notification Service updates user & restaurant in real-time.
+6. Analytics collected for restaurants, influencers, and content ranking.
+
+---
+
+## **3. Full Feature List (No MVP split, everything included)**
+
+**User App:**
+
+* Onboarding & Authentication (email/phone/social login)
+* Profile, followers, feed preferences
+* Scrollable food video feed
+* Explore random trending content
+* Search by cuisine, mood, tags
+* Save/favorite dishes
+* Comments, likes, share reels
+* Slide left → add to cart
+* Slide right → instant buy
+* Razorpay payment with GST
+* Track order in real-time via Delivery Partner App
+* Notifications & activity feed
+
+**Restaurant Dashboard:**
+
+* Curated restaurant signup
+* Upload menus & food videos
+* Subscription & order tracking
+* Analytics: video performance, orders, engagement
+* Delivery assignment & tracking via API
+* GST reporting & invoice generation
+
+**Influencer Dashboard:**
+
+* Profile setup
+* Upload reels linked to restaurants
+* Track commission per order
+* Analytics: views, engagement, sales conversion
+
+**Admin Panel:**
+
+* User management
+* Restaurant & influencer approval
+* Content moderation
+* Analytics dashboard
+* Payment & subscription monitoring
+* Delivery tracking & reporting
+
+---
+
+## **4. Technology Stack**
+
+**Frontend:**
+
+* React Native (iOS + Android)
+* Expo / Native modules for video & push notifications
+* Redux / Context API for state management
+
+**Backend:**
+
+* FastAPI (Python)
+* PostgreSQL / MySQL database
+* Redis for caching & feed optimization
+* Celery + RabbitMQ / Redis for async tasks (video processing, notifications)
+* Video processing: FFmpeg, AWS Elastic Transcoder
+
+**Storage:**
+
+* AWS S3 / Cloud storage for videos & images
+* CloudFront / CDN for streaming
+
+**Payment:**
+
+* Razorpay integration
+* GST calculation per order
+
+**Delivery:**
+
+* API integration with **existing Delivery Partner App**
+
+**Hosting / Deployment:**
+
+* Backend: AWS EC2 / Elastic Beanstalk / Docker containers
+* Frontend: App Store / Play Store
+* CI/CD: GitHub Actions / Replit pipelines
+
+**Security:**
+
+* JWT Authentication
+* HTTPS / SSL
+* Role-based access control for users, restaurants, influencers, admin
+* Data encryption at rest & transit
+
+---
+
+## **5. Recommendations / Additional Considerations**
+
+* Start pilot in **HSR Layout Bangalore** with curated restaurants.
+* Implement video recommendation engine using **user preferences + engagement + location**.
+* Moderate content automatically and manually for quality.
+* Track metrics: user engagement, order conversion, influencer performance.
+* Use microservices architecture for scalability.
+* Plan expansion roadmap: city-wide → multiple cities → add more restaurant types.
+
+---
+
+✅ **End Result:**
+A fully functioning, content-first food discovery & ordering app with:
+
+* Instagram/Youtube-style reels feed
+* Shoppable videos with instant ordering
+* Razorpay payments & GST handling
+* Delivery via your in-house Delivery Partner App
+* Curated restaurant and influencer ecosystem
+* Scalable backend & cloud storage
+* Analytics and admin moderation
+
+---
+
+I can also **draw a visual architecture diagram** for this (backend, frontend, delivery flow, Razorpay, content flow) which you can include in your Replit AI prompt or pitch deck for VCs.
+
+Do you want me to generate the **visual diagram next**?
