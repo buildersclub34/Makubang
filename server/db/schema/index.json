@@ -1,0 +1,47 @@
+
+{
+  "version": "1.0.0",
+  "tables": {
+    "users": {
+      "id": "uuid",
+      "email": "varchar",
+      "password": "varchar",
+      "name": "varchar",
+      "phone": "varchar",
+      "role": "enum",
+      "isVerified": "boolean",
+      "createdAt": "timestamp",
+      "updatedAt": "timestamp"
+    },
+    "restaurants": {
+      "id": "uuid",
+      "name": "varchar",
+      "description": "text",
+      "address": "text",
+      "phone": "varchar",
+      "email": "varchar",
+      "isActive": "boolean",
+      "createdAt": "timestamp",
+      "updatedAt": "timestamp"
+    },
+    "orders": {
+      "id": "uuid",
+      "userId": "uuid",
+      "restaurantId": "uuid",
+      "status": "enum",
+      "total": "decimal",
+      "deliveryAddress": "text",
+      "createdAt": "timestamp",
+      "updatedAt": "timestamp"
+    },
+    "notifications": {
+      "id": "uuid",
+      "userId": "uuid",
+      "title": "varchar",
+      "message": "text",
+      "type": "enum",
+      "isRead": "boolean",
+      "createdAt": "timestamp"
+    }
+  }
+}

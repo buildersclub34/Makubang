@@ -1,9 +1,50 @@
-import React from 'react';
-import { View, Text, StyleSheet, ScrollView } from 'react-native';
+import React, { useState, useEffect } from 'react';
+import { View, Text, StyleSheet, ScrollView, ActivityIndicator } from 'react-native';
 import { StatusBar } from 'expo-status-bar';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 
 export default function HomeScreen() {
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    // Simulate app initialization
+    const initializeApp = async () => {
+      try {
+        // Add any initialization logic here
+        await new Promise(resolve => setTimeout(resolve, 1000));
+        setLoading(false);
+      } catch (err) {
+        console.error('App initialization error:', err);
+        setError('Failed to initialize app');
+        setLoading(false);
+      }
+    };
+
+    initializeApp();
+  }, []);
+
+  if (loading) {
+    return (
+      <SafeAreaProvider>
+        <View style={[styles.container, styles.centered]}>
+          <ActivityIndicator size="large" color="#FF6B35" />
+          <Text style={styles.loadingText}>Loading Makubang...</Text>
+        </View>
+      </SafeAreaProvider>
+    );
+  }
+
+  if (error) {
+    return (
+      <SafeAreaProvider>
+        <View style={[styles.container, styles.centered]}>
+          <Text style={styles.errorText}>⚠️ {error}</Text>
+          <Text style={styles.description}>Please try restarting the app</Text>
+        </View>
+      </SafeAreaProvider>
+    );
+  }
   return (
     <SafeAreaProvider>
       <ScrollView style={styles.container}>
@@ -49,6 +90,22 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: '#fff',
+  },
+  centered: {
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  loadingText: {
+    marginTop: 16,
+    fontSize: 16,
+    color: '#666',
+  },
+  errorText: {
+    fontSize: 18,
+    color: '#FF6B35',
+    fontWeight: 'bold',
+    textAlign: 'center',
+    marginBottom: 8,
   },
   header: {
     padding: 20,

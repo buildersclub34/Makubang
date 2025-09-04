@@ -2,11 +2,11 @@ import axios, { AxiosInstance, AxiosRequestConfig, AxiosResponse } from 'axios';
 import * as SecureStore from 'expo-secure-store';
 import { Platform } from 'react-native';
 
-// Use localhost for Android emulator, 10.0.2.2 for iOS simulator, or your actual IP for physical devices
+// Use Replit server URL - adjust based on your Replit domain
 const API_URL = Platform.select({
-  android: 'http://10.0.2.2:3000/api',
-  ios: 'http://localhost:3000/api',
-  default: 'http://localhost:3000/api',
+  android: 'http://0.0.0.0:5000/api',
+  ios: 'http://0.0.0.0:5000/api', 
+  default: 'http://0.0.0.0:5000/api',
 });
 
 // Create axios instance

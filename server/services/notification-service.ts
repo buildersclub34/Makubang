@@ -8,6 +8,8 @@ import { InternalServerError, NotFoundError } from '../middleware/error-handler'
 import { EmailService } from './email-service';
 import { PushNotificationService } from './push-notification-service';
 
+// Database schema is handled by the main db connection
+
 export type NotificationType = 
   | 'order_created'
   | 'order_status_updated'
@@ -69,7 +71,7 @@ export class NotificationService {
     try {
       // Get user notification preferences
       const settings = await this.getUserNotificationSettings(userId);
-      
+
       // Create notification record
       const notificationId = await this.createNotificationRecord({
         userId,
@@ -158,7 +160,7 @@ export class NotificationService {
     options: Omit<NotificationOptions, 'userId' | 'type' | 'data'> = {}
   ): Promise<string[]> {
     const notificationIds: string[] = [];
-    
+
     for (const userId of userIds) {
       try {
         const notificationId = await this.sendNotification({
@@ -172,7 +174,7 @@ export class NotificationService {
         logger.error(`Error sending notification to user ${userId}`, { error, type });
       }
     }
-    
+
     return notificationIds;
   }
 
@@ -265,17 +267,17 @@ export class NotificationService {
     } = {}
   ) {
     const { limit = 20, offset = 0, read, types } = options;
-    
+
     const where = [eq(notifications.userId, userId)];
-    
+
     if (read !== undefined) {
       where.push(eq(notifications.read, read));
     }
-    
+
     if (types && types.length > 0) {
       where.push(inArray(notifications.type, types));
     }
-    
+
     const [items, [total]] = await Promise.all([
       db.query.notifications.findMany({
         where: and(...where),
@@ -287,7 +289,7 @@ export class NotificationService {
         .from(notifications)
         .where(and(...where)),
     ]);
-    
+
     return {
       items,
       total: total?.count || 0,
@@ -328,7 +330,7 @@ export class NotificationService {
     }
   ) {
     const currentSettings = await this.getUserNotificationSettings(userId);
-    
+
     const [settings] = await db
       .insert(userNotificationSettings)
       .values({
