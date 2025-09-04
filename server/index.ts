@@ -14,8 +14,7 @@ const __dirname = path.dirname(__filename);
 // config(); // This line seems to be removed in the provided changes, assuming it's handled elsewhere or not needed for this specific fix.
 
 // Import routes and middleware
-// import authRoutes from './routes/auth.routes'; // This import seems to be removed in the provided changes, assuming it's handled elsewhere or not needed for this specific fix.
-// import orderRoutes from './routes/order.routes'; // This import seems to be removed in the provided changes, assuming it's handled elsewhere or not needed for this specific fix.
+import { registerRoutes } from './routes/index.js';
 import { errorHandler } from './middleware/error-handler.js';
 import { requestLogger } from './middleware/request-logger.js';
 import WebSocketService from './lib/websocket/server.js';
@@ -40,9 +39,8 @@ const wsService = new WebSocketService(httpServer, {
   connectionTimeout: 30000,
 });
 
-// Initialize services
-// const notificationService = new NotificationService(wsService); // This initialization seems to be removed in the provided changes, assuming it's handled elsewhere or not needed for this specific fix.
-// const orderTrackingService = new OrderTrackingService(wsService); // This initialization seems to be removed in the provided changes, assuming it's handled elsewhere or not needed for this specific fix.
+// Store WebSocket service in app locals for use in routes
+app.locals.wsService = wsService;
 
 // Security middleware
 app.use(helmet({
@@ -85,9 +83,8 @@ app.use(requestLogger);
 // Static files
 app.use('/uploads', express.static(path.join(__dirname, '../uploads')));
 
-// API Routes
-// app.use('/api/auth', authRoutes); // This route seems to be removed in the provided changes, assuming it's handled elsewhere or not needed for this specific fix.
-// app.use('/api/orders', orderRoutes); // This route seems to be removed in the provided changes, assuming it's handled elsewhere or not needed for this specific fix.
+// Register all routes
+registerRoutes(app);
 
 // Video upload and processing routes
 app.post('/api/videos/upload', async (req, res) => {
@@ -139,21 +136,7 @@ app.post('/api/notifications/send', async (req, res) => {
   }
 });
 
-// Health check
-app.get('/health', (req, res) => {
-  res.json({
-    status: 'ok',
-    timestamp: new Date().toISOString(),
-    services: {
-      websocket: 'running',
-      notifications: 'active', // Assuming notification service is active even if not explicitly initialized here
-      orderTracking: 'active' // Assuming order tracking service is active even if not explicitly initialized here
-    }
-  });
-});
-
 // Setup WebSocket
-// setupWebSocket(io); // This setup seems to be removed in the provided changes, assuming it's handled elsewhere or not needed for this specific fix.
 
 // Set up WebSocket event handlers (as per changes)
 wsService.on('order:track', (client, data) => {
@@ -184,14 +167,6 @@ wsService.on('notification:subscribe', (client, data) => {
   }
 });
 
-
-// Error handling
-app.use(errorHandler);
-
-// 404 handler
-app.use('*', (req, res) => {
-  res.status(404).json({ error: 'Route not found' });
-});
 
 const PORT = process.env.PORT || 5000;
 
