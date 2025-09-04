@@ -608,3 +608,590 @@ const styles = StyleSheet.create({
     fontWeight: '600',
   },
 });
+import React, { useState, useEffect } from 'react';
+import {
+  View,
+  Text,
+  StyleSheet,
+  ScrollView,
+  TouchableOpacity,
+  TextInput,
+  Modal,
+  Alert,
+  RefreshControl,
+} from 'react-native';
+import Icon from 'react-native-vector-icons/MaterialIcons';
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { useAuth } from '../context/AuthContext';
+import { deliveryAPI } from '../services/api';
+
+interface Transaction {
+  id: string;
+  type: 'credit' | 'debit';
+  amount: number;
+  description: string;
+  createdAt: string;
+  status: string;
+}
+
+interface EarningsSummary {
+  currentBalance: number;
+  totalEarnings: number;
+  totalDeliveries: number;
+  avgEarningsPerDelivery: number;
+}
+
+export default function WalletScreen() {
+  const { user } = useAuth();
+  const [selectedPeriod, setSelectedPeriod] = useState<'today' | 'week' | 'month'>('today');
+  const [showWithdrawModal, setShowWithdrawModal] = useState(false);
+  const [withdrawAmount, setWithdrawAmount] = useState('');
+  const [bankDetails, setBankDetails] = useState({
+    accountNumber: '',
+    ifscCode: '',
+    accountHolder: '',
+  });
+  const [refreshing, setRefreshing] = useState(false);
+  const queryClient = useQueryClient();
+
+  const { data: wallet, isLoading: walletLoading } = useQuery({
+    queryKey: ['wallet'],
+    queryFn: deliveryAPI.getWallet,
+  });
+
+  const { data: earnings } = useQuery({
+    queryKey: ['earnings', selectedPeriod],
+    queryFn: () => deliveryAPI.getEarningsSummary(selectedPeriod),
+  });
+
+  const { data: transactions } = useQuery({
+    queryKey: ['transactions'],
+    queryFn: () => deliveryAPI.getTransactions(),
+  });
+
+  const { data: withdrawals } = useQuery({
+    queryKey: ['withdrawals'],
+    queryFn: deliveryAPI.getWithdrawalHistory,
+  });
+
+  const withdrawMutation = useMutation({
+    mutationFn: (data: { amount: number; bankDetails: any }) =>
+      deliveryAPI.requestWithdrawal(data.amount, data.bankDetails),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['wallet'] });
+      queryClient.invalidateQueries({ queryKey: ['withdrawals'] });
+      setShowWithdrawModal(false);
+      setWithdrawAmount('');
+      Alert.alert('Success', 'Withdrawal request submitted successfully');
+    },
+    onError: (error: any) => {
+      Alert.alert('Error', error.message || 'Failed to submit withdrawal request');
+    },
+  });
+
+  const handleWithdraw = () => {
+    const amount = parseFloat(withdrawAmount);
+    
+    if (!amount || amount < 100) {
+      Alert.alert('Error', 'Minimum withdrawal amount is ₹100');
+      return;
+    }
+
+    if (amount > (wallet?.balance || 0)) {
+      Alert.alert('Error', 'Insufficient balance');
+      return;
+    }
+
+    if (!bankDetails.accountNumber || !bankDetails.ifscCode || !bankDetails.accountHolder) {
+      Alert.alert('Error', 'Please fill all bank details');
+      return;
+    }
+
+    withdrawMutation.mutate({ amount, bankDetails });
+  };
+
+  const onRefresh = async () => {
+    setRefreshing(true);
+    await queryClient.invalidateQueries();
+    setRefreshing(false);
+  };
+
+  const formatCurrency = (amount: number) => {
+    return new Intl.NumberFormat('en-IN', {
+      style: 'currency',
+      currency: 'INR',
+    }).format(amount);
+  };
+
+  const getTransactionIcon = (type: string) => {
+    return type === 'credit' ? 'arrow-downward' : 'arrow-upward';
+  };
+
+  const getTransactionColor = (type: string) => {
+    return type === 'credit' ? '#4CAF50' : '#F44336';
+  };
+
+  if (walletLoading) {
+    return (
+      <View style={styles.loadingContainer}>
+        <Text>Loading wallet...</Text>
+      </View>
+    );
+  }
+
+  return (
+    <ScrollView 
+      style={styles.container}
+      refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} />}
+    >
+      {/* Balance Card */}
+      <View style={styles.balanceCard}>
+        <Text style={styles.balanceLabel}>Available Balance</Text>
+        <Text style={styles.balanceAmount}>
+          {formatCurrency(wallet?.balance || 0)}
+        </Text>
+        <TouchableOpacity
+          style={styles.withdrawButton}
+          onPress={() => setShowWithdrawModal(true)}
+          disabled={!wallet?.balance || wallet.balance < 100}
+        >
+          <Icon name="account-balance-wallet" size={20} color="#fff" />
+          <Text style={styles.withdrawButtonText}>Withdraw</Text>
+        </TouchableOpacity>
+      </View>
+
+      {/* Earnings Summary */}
+      <View style={styles.summaryCard}>
+        <View style={styles.summaryHeader}>
+          <Text style={styles.summaryTitle}>Earnings Summary</Text>
+          <View style={styles.periodSelector}>
+            {(['today', 'week', 'month'] as const).map((period) => (
+              <TouchableOpacity
+                key={period}
+                style={[
+                  styles.periodButton,
+                  selectedPeriod === period && styles.periodButtonActive
+                ]}
+                onPress={() => setSelectedPeriod(period)}
+              >
+                <Text style={[
+                  styles.periodButtonText,
+                  selectedPeriod === period && styles.periodButtonTextActive
+                ]}>
+                  {period.charAt(0).toUpperCase() + period.slice(1)}
+                </Text>
+              </TouchableOpacity>
+            ))}
+          </View>
+        </View>
+
+        <View style={styles.summaryStats}>
+          <View style={styles.statItem}>
+            <Text style={styles.statValue}>
+              {formatCurrency(earnings?.totalEarnings || 0)}
+            </Text>
+            <Text style={styles.statLabel}>Total Earnings</Text>
+          </View>
+          <View style={styles.statItem}>
+            <Text style={styles.statValue}>{earnings?.totalDeliveries || 0}</Text>
+            <Text style={styles.statLabel}>Deliveries</Text>
+          </View>
+          <View style={styles.statItem}>
+            <Text style={styles.statValue}>
+              {formatCurrency(earnings?.avgEarningsPerDelivery || 0)}
+            </Text>
+            <Text style={styles.statLabel}>Avg per Delivery</Text>
+          </View>
+        </View>
+      </View>
+
+      {/* Recent Transactions */}
+      <View style={styles.transactionsCard}>
+        <Text style={styles.sectionTitle}>Recent Transactions</Text>
+        {transactions?.items?.map((transaction: Transaction) => (
+          <View key={transaction.id} style={styles.transactionItem}>
+            <View style={styles.transactionLeft}>
+              <View style={[
+                styles.transactionIcon,
+                { backgroundColor: getTransactionColor(transaction.type) }
+              ]}>
+                <Icon 
+                  name={getTransactionIcon(transaction.type)} 
+                  size={16} 
+                  color="#fff" 
+                />
+              </View>
+              <View style={styles.transactionInfo}>
+                <Text style={styles.transactionDescription}>
+                  {transaction.description}
+                </Text>
+                <Text style={styles.transactionDate}>
+                  {new Date(transaction.createdAt).toLocaleDateString()}
+                </Text>
+              </View>
+            </View>
+            <Text style={[
+              styles.transactionAmount,
+              { color: getTransactionColor(transaction.type) }
+            ]}>
+              {transaction.type === 'credit' ? '+' : '-'}
+              {formatCurrency(Math.abs(transaction.amount))}
+            </Text>
+          </View>
+        ))}
+      </View>
+
+      {/* Withdrawal History */}
+      <View style={styles.withdrawalsCard}>
+        <Text style={styles.sectionTitle}>Withdrawal History</Text>
+        {withdrawals?.map((withdrawal: any) => (
+          <View key={withdrawal.id} style={styles.withdrawalItem}>
+            <View style={styles.withdrawalInfo}>
+              <Text style={styles.withdrawalAmount}>
+                {formatCurrency(withdrawal.amount)}
+              </Text>
+              <Text style={styles.withdrawalDate}>
+                Requested: {new Date(withdrawal.requestedAt).toLocaleDateString()}
+              </Text>
+            </View>
+            <View style={[
+              styles.withdrawalStatus,
+              { backgroundColor: getWithdrawalStatusColor(withdrawal.status) }
+            ]}>
+              <Text style={styles.withdrawalStatusText}>
+                {withdrawal.status.charAt(0).toUpperCase() + withdrawal.status.slice(1)}
+              </Text>
+            </View>
+          </View>
+        ))}
+      </View>
+
+      {/* Withdrawal Modal */}
+      <Modal
+        visible={showWithdrawModal}
+        animationType="slide"
+        transparent
+        onRequestClose={() => setShowWithdrawModal(false)}
+      >
+        <View style={styles.modalOverlay}>
+          <View style={styles.modalContent}>
+            <View style={styles.modalHeader}>
+              <Text style={styles.modalTitle}>Withdraw Funds</Text>
+              <TouchableOpacity onPress={() => setShowWithdrawModal(false)}>
+                <Icon name="close" size={24} color="#333" />
+              </TouchableOpacity>
+            </View>
+
+            <View style={styles.modalBody}>
+              <Text style={styles.inputLabel}>Withdrawal Amount</Text>
+              <TextInput
+                style={styles.input}
+                value={withdrawAmount}
+                onChangeText={setWithdrawAmount}
+                placeholder="Enter amount (min ₹100)"
+                keyboardType="numeric"
+              />
+
+              <Text style={styles.inputLabel}>Account Number</Text>
+              <TextInput
+                style={styles.input}
+                value={bankDetails.accountNumber}
+                onChangeText={(text) => setBankDetails({...bankDetails, accountNumber: text})}
+                placeholder="Enter account number"
+              />
+
+              <Text style={styles.inputLabel}>IFSC Code</Text>
+              <TextInput
+                style={styles.input}
+                value={bankDetails.ifscCode}
+                onChangeText={(text) => setBankDetails({...bankDetails, ifscCode: text})}
+                placeholder="Enter IFSC code"
+              />
+
+              <Text style={styles.inputLabel}>Account Holder Name</Text>
+              <TextInput
+                style={styles.input}
+                value={bankDetails.accountHolder}
+                onChangeText={(text) => setBankDetails({...bankDetails, accountHolder: text})}
+                placeholder="Enter account holder name"
+              />
+
+              <TouchableOpacity
+                style={styles.submitButton}
+                onPress={handleWithdraw}
+                disabled={withdrawMutation.isPending}
+              >
+                <Text style={styles.submitButtonText}>
+                  {withdrawMutation.isPending ? 'Processing...' : 'Submit Request'}
+                </Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </Modal>
+    </ScrollView>
+  );
+}
+
+function getWithdrawalStatusColor(status: string): string {
+  switch (status) {
+    case 'completed': return '#4CAF50';
+    case 'failed': return '#F44336';
+    case 'processing': return '#FF9800';
+    default: return '#757575';
+  }
+}
+
+const styles = StyleSheet.create({
+  container: {
+    flex: 1,
+    backgroundColor: '#f5f5f5',
+  },
+  loadingContainer: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  balanceCard: {
+    backgroundColor: '#fff',
+    margin: 16,
+    padding: 24,
+    borderRadius: 12,
+    alignItems: 'center',
+    elevation: 3,
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
+  },
+  balanceLabel: {
+    fontSize: 16,
+    color: '#757575',
+    marginBottom: 8,
+  },
+  balanceAmount: {
+    fontSize: 32,
+    fontWeight: 'bold',
+    color: '#333',
+    marginBottom: 16,
+  },
+  withdrawButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#4CAF50',
+    paddingHorizontal: 20,
+    paddingVertical: 10,
+    borderRadius: 20,
+  },
+  withdrawButtonText: {
+    color: '#fff',
+    fontSize: 16,
+    fontWeight: '600',
+    marginLeft: 8,
+  },
+  summaryCard: {
+    backgroundColor: '#fff',
+    margin: 16,
+    borderRadius: 12,
+    elevation: 3,
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
+  },
+  summaryHeader: {
+    padding: 16,
+    borderBottomWidth: 1,
+    borderBottomColor: '#e0e0e0',
+  },
+  summaryTitle: {
+    fontSize: 18,
+    fontWeight: 'bold',
+    marginBottom: 12,
+  },
+  periodSelector: {
+    flexDirection: 'row',
+    backgroundColor: '#f5f5f5',
+    borderRadius: 8,
+    padding: 4,
+  },
+  periodButton: {
+    flex: 1,
+    paddingVertical: 8,
+    alignItems: 'center',
+    borderRadius: 6,
+  },
+  periodButtonActive: {
+    backgroundColor: '#fff',
+  },
+  periodButtonText: {
+    fontSize: 14,
+    color: '#757575',
+  },
+  periodButtonTextActive: {
+    color: '#333',
+    fontWeight: '600',
+  },
+  summaryStats: {
+    flexDirection: 'row',
+    padding: 16,
+  },
+  statItem: {
+    flex: 1,
+    alignItems: 'center',
+  },
+  statValue: {
+    fontSize: 18,
+    fontWeight: 'bold',
+    color: '#333',
+    marginBottom: 4,
+  },
+  statLabel: {
+    fontSize: 12,
+    color: '#757575',
+  },
+  transactionsCard: {
+    backgroundColor: '#fff',
+    margin: 16,
+    borderRadius: 12,
+    padding: 16,
+    elevation: 3,
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
+  },
+  sectionTitle: {
+    fontSize: 18,
+    fontWeight: 'bold',
+    marginBottom: 16,
+  },
+  transactionItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingVertical: 12,
+    borderBottomWidth: 1,
+    borderBottomColor: '#f0f0f0',
+  },
+  transactionLeft: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    flex: 1,
+  },
+  transactionIcon: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginRight: 12,
+  },
+  transactionInfo: {
+    flex: 1,
+  },
+  transactionDescription: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: '#333',
+  },
+  transactionDate: {
+    fontSize: 12,
+    color: '#757575',
+    marginTop: 2,
+  },
+  transactionAmount: {
+    fontSize: 16,
+    fontWeight: 'bold',
+  },
+  withdrawalsCard: {
+    backgroundColor: '#fff',
+    margin: 16,
+    borderRadius: 12,
+    padding: 16,
+    elevation: 3,
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
+  },
+  withdrawalItem: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingVertical: 12,
+    borderBottomWidth: 1,
+    borderBottomColor: '#f0f0f0',
+  },
+  withdrawalInfo: {
+    flex: 1,
+  },
+  withdrawalAmount: {
+    fontSize: 16,
+    fontWeight: 'bold',
+    color: '#333',
+  },
+  withdrawalDate: {
+    fontSize: 12,
+    color: '#757575',
+    marginTop: 2,
+  },
+  withdrawalStatus: {
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 12,
+  },
+  withdrawalStatusText: {
+    fontSize: 12,
+    color: '#fff',
+    fontWeight: '600',
+  },
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0, 0, 0, 0.5)',
+    justifyContent: 'flex-end',
+  },
+  modalContent: {
+    backgroundColor: '#fff',
+    borderTopLeftRadius: 20,
+    borderTopRightRadius: 20,
+    maxHeight: '80%',
+  },
+  modalHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    padding: 20,
+    borderBottomWidth: 1,
+    borderBottomColor: '#e0e0e0',
+  },
+  modalTitle: {
+    fontSize: 20,
+    fontWeight: 'bold',
+  },
+  modalBody: {
+    padding: 20,
+  },
+  inputLabel: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: '#333',
+    marginBottom: 8,
+    marginTop: 16,
+  },
+  input: {
+    borderWidth: 1,
+    borderColor: '#e0e0e0',
+    borderRadius: 8,
+    padding: 12,
+    fontSize: 16,
+  },
+  submitButton: {
+    backgroundColor: '#4CAF50',
+    paddingVertical: 16,
+    borderRadius: 8,
+    alignItems: 'center',
+    marginTop: 24,
+  },
+  submitButtonText: {
+    color: '#fff',
+    fontSize: 16,
+    fontWeight: 'bold',
+  },
+});
