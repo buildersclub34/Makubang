@@ -1,10 +1,23 @@
 import { Request, Response, NextFunction } from 'express';
 import { z } from 'zod';
 import { OrderUpdateService } from '../services/order-update.service';
-import { OrderStatus } from '../../shared/types/order';
-import { db } from '../db';
-import { orders } from '../../shared/schema';
-import { eq } from 'drizzle-orm';
+
+// Define OrderStatus enum locally to avoid import issues
+enum OrderStatus {
+  PENDING = 'PENDING',
+  ACCEPTED = 'ACCEPTED',
+  CONFIRMED = 'CONFIRMED',
+  PREPARING = 'PREPARING',
+  READY_FOR_PICKUP = 'READY_FOR_PICKUP',
+  OUT_FOR_DELIVERY = 'OUT_FOR_DELIVERY',
+  DELIVERED = 'DELIVERED',
+  CANCELLED = 'CANCELLED',
+  COMPLETED = 'COMPLETED',
+  ASSIGNED = 'ASSIGNED'
+}
+
+import { getDatabase } from '..';
+import { ObjectId } from 'mongodb';
 
 // Type for the user object in the request
 type RequestUser = {
@@ -45,12 +58,10 @@ export class OrderController {
       const { orderId } = req.params;
       const userId = req.user?.id;
       const { status, reason, metadata } = updateStatusSchema.parse(req.body);
+      const db = await getDatabase();
 
       // Verify user has permission to update this order
-      const [order] = await db.select()
-        .from(orders)
-        .where(eq(orders.id, orderId))
-        .limit(1);
+      const order = await db.collection('orders').findOne({ _id: new ObjectId(orderId) });
 
       if (!order) {
         return res.status(404).json({ error: 'Order not found' });
@@ -64,15 +75,32 @@ export class OrderController {
       }
 
       // Update order status
-      const updatedOrder = await this.orderUpdateService.updateOrderStatus(
-        orderId,
+      const update: any = {
         status,
-        { ...metadata, updatedBy: userId, reason }
+        updatedAt: new Date()
+      };
+      
+      if (reason) {
+        update.cancellationReason = reason;
+      }
+      
+      if (metadata) {
+        update.metadata = metadata;
+      }
+      
+      const result = await db.collection('orders').findOneAndUpdate(
+        { _id: new ObjectId(orderId) },
+        { $set: update },
+        { returnDocument: 'after' }
       );
+
+      if (!result.value) {
+        return res.status(404).json({ error: 'Order not found after update' });
+      }
 
       res.json({
         success: true,
-        data: updatedOrder
+        data: result.value
       });
     } catch (error) {
       console.error('Error updating order status:', error);
@@ -98,7 +126,7 @@ export class OrderController {
         return res.status(401).json({ error: 'Unauthorized' });
       }
 
-      await this.orderUpdateService.updateDeliveryLocation(orderId, { lat, lng });
+      await this.orderUpdateService.updateDeliveryLocation(orderId, { lat, lng }, userId);
 
       res.json({
         success: true,

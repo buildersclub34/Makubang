@@ -3,7 +3,8 @@ import {
   subscriptionPlans,
   subscriptions,
   subscriptionInvoices, 
-  subscriptionUsage
+  subscriptionUsage,
+  type InferSelectModel
 } from '../shared/schema';
 import { eq, and, gte, lte, sql } from 'drizzle-orm';
 import { v4 as uuidv4 } from 'uuid';
@@ -23,10 +24,10 @@ import type {
 type SubscriptionStatus = 'active' | 'canceled' | 'past_due' | 'unpaid' | 'incomplete' | 'incomplete_expired' | 'trialing' | 'paused';
 
 // Define database row types
-type DbSubscriptionPlan = typeof subscriptionPlans.$inferSelect;
-type DbSubscription = typeof subscriptions.$inferSelect;
-type DbSubscriptionInvoice = typeof subscriptionInvoices.$inferSelect;
-type DbSubscriptionUsage = typeof subscriptionUsage.$inferSelect;
+type DbSubscriptionPlan = InferSelectModel<typeof subscriptionPlans>;
+type DbSubscription = InferSelectModel<typeof subscriptions>;
+type DbSubscriptionInvoice = InferSelectModel<typeof subscriptionInvoices>;
+type DbSubscriptionUsage = InferSelectModel<typeof subscriptionUsage>;
 
 type RazorpayOrderOptions = {
   amount: number;
@@ -42,7 +43,8 @@ export type BillingCycle = 'monthly' | 'yearly' | 'one_time';
 export type SubscriptionPlan = ISubscriptionPlan;
 export type Subscription = ISubscription;
 export type SubscriptionInvoice = ISubscriptionInvoice;
-export type SubscriptionUsage = ISubscriptionUsage;
+
+export interface SubscriptionUsage extends ISubscriptionUsage {
   limit: number;
   periodStart: Date;
   periodEnd: Date;
@@ -307,37 +309,51 @@ export class SubscriptionService {
       };
     } catch (error) {
       logger.error('Failed to process payment', { error, userId, subscriptionId });
-      throw new InternalServerError('Failed to process payment');
+
+          // Process the payment for the subscription
+          await this.processPayment({
+            userId: subscription.userId,
+            plan: await this.getPlan(subscription.planId),
+            paymentMethodId: subscription.paymentMethodId || '',
+            subscriptionId: subscription.id
+          });
+
+          // Update subscription with new period
+          await db.update(subscriptions)
+            .set({
+              startDate: new Date(),
+              endDate: new Date(Date.now() + (subscription.plan.billingCycle === 'yearly' ? 365 : 30) * 24 * 60 * 60 * 1000), // 30 days or 1 year from now
+              updatedAt: new Date()
+            })
+            .where(eq(subscriptions.id, subscription.id));
+        } catch (error) {
+          console.error(`Failed to process subscription ${subscription.id}:`, error);
+          // Mark subscription as past due if payment fails
+          await db.update(subscriptions)
+            .set({
+              status: 'past_due',
+              updatedAt: new Date()
+            })
+            .where(eq(subscriptions.id, subscription.id));
+        }
+      }
+    } catch (error) {
+      console.error('Error in processRecurringBilling:', error);
+      throw new Error('Failed to process recurring billing');
     }
   }
 
-  /**
-   * Get a subscription by ID
-   */
-  async getSubscription(subscriptionId: string): Promise<ISubscription> {
-    try {
-      const [subscription] = await db
-        .select()
-        .from(subscriptions)
-        .where(eq(subscriptions.id, subscriptionId));
-
-      if (!subscription) {
-        throw new NotFoundError('Subscription not found');
-      }
-
-      return subscription as ISubscription;
-    } catch (error) {
-      if (error instanceof NotFoundError) throw error;
-   */
   /**
    * Get current usage for a subscription feature
    */
   public async getUsage(subscriptionId: string, feature: string): Promise<number> {
     try {
       // First, verify the subscription exists
-      const subscription = await db.query.subscriptions.findFirst({
-        where: (sub, { eq }) => eq(sub.id, subscriptionId)
-      });
+      const [subscription] = await db
+        .select()
+        .from(subscriptions)
+        .where(eq(subscriptions.id, subscriptionId))
+        .limit(1);
 
       if (!subscription) {
         throw new NotFoundError('Subscription not found');
@@ -346,14 +362,17 @@ export class SubscriptionService {
       const now = new Date();
       
       // Get current usage period (typically monthly or yearly based on plan)
-      const usage = await db.query.subscriptionUsage.findFirst({
-        where: (usage, { and, eq, gte }) => 
+      const [usage] = await db
+        .select()
+        .from(subscriptionUsage)
+        .where(
           and(
-            eq(usage.subscriptionId, subscriptionId),
-            eq(usage.feature, feature),
-            gte(usage.periodEnd, now)
+            eq(subscriptionUsage.subscriptionId, subscriptionId),
+            eq(subscriptionUsage.feature, feature),
+            gte(subscriptionUsage.periodEnd, now)
           )
-      });
+        )
+        .limit(1);
 
       return usage?.used ?? 0;
     } catch (error) {
@@ -373,83 +392,109 @@ export class SubscriptionService {
     userId: string,
     feature: string,
     quantity: number = 1
-  ): Promise<ISubscriptionUsage> {
+  ): Promise<SubscriptionUsage> {
     return db.transaction(async (tx) => {
-      // Get subscription and plan
-      const subscription = await this.getSubscription(subscriptionId);
-      const plan = await this.getPlan(subscription.planId);
-      
-      // Check if subscription is active
-      if (subscription.status !== 'active') {
-        throw new ForbiddenError('Subscription is not active');
-      }
+      try {
+        // Get subscription and plan
+        const [subscription] = await tx
+          .select()
+          .from(subscriptions)
+          .where(eq(subscriptions.id, subscriptionId))
+          .limit(1);
 
-      // Check if feature is included in the plan
-      if (!plan.features.includes(feature)) {
-        throw new ForbiddenError(`Feature ${feature} is not included in this plan`);
-      }
+        if (!subscription) {
+          throw new NotFoundError('Subscription not found');
+        }
 
-      // Check usage limits
-      const currentUsage = await this.getUsage(subscriptionId, feature);
-      const maxUsage = plan.maxUsage || 0;
-      
-      if (maxUsage > 0 && (currentUsage + quantity) > maxUsage) {
-        throw new ForbiddenError(`Usage limit exceeded for feature ${feature}`);
-      }
-
-      // Record usage
-      const now = new Date();
-      const existingUsage = await tx.query.subscriptionUsage.findFirst({
-        where: (usage, { and, eq, gte }) => 
-          and(
-            eq(usage.subscriptionId, subscriptionId),
-            eq(usage.feature, feature),
-            gte(usage.periodEnd, now)
-          )
-      });
-      
-      if (existingUsage) {
-        // Update existing usage record
-        const newUsage = (existingUsage.used || 0) + quantity;
-        const [updatedUsage] = await tx
-          .update(subscriptionUsage)
-          .set({
-            used: newUsage,
-            updatedAt: now,
-          })
-          .where(eq(subscriptionUsage.id, existingUsage.id))
-          .returning();
-
-        return updatedUsage as ISubscriptionUsage;
-      } else {
-        // Create new usage record
-        const periodEnd = new Date();
-        periodEnd.setDate(periodEnd.getDate() + 30); // Default 30-day period
+        const plan = await this.getPlan(subscription.planId);
         
-        const [newUsage] = await tx
-          .insert(subscriptionUsage)
-          .values({
-            id: `usage_${uuidv4()}`,
-            subscriptionId,
-            userId,
-            feature,
-            used: quantity,
-            limit: maxUsage,
-            periodStart: now,
-            periodEnd,
-            resetAt: periodEnd,
-            metadata: {},
-            createdAt: now,
-            updatedAt: now,
-          })
-          .returning();
-          
-        return newUsage as ISubscriptionUsage;
+        // Check if subscription is active
+        if (subscription.status !== 'active') {
+          throw new ForbiddenError('Subscription is not active');
+        }
+
+        // Check if feature is included in the plan
+        if (!plan.features || !plan.features.includes(feature)) {
+          throw new ForbiddenError(`Feature ${feature} is not included in this plan`);
+        }
+
+        // Get or create usage record
+        const today = new Date();
+        const [usage] = await tx
+          .select()
+          .from(subscriptionUsage)
+          .where(
+            and(
+              eq(subscriptionUsage.subscriptionId, subscriptionId),
+              eq(subscriptionUsage.feature, feature),
+              gte(subscriptionUsage.periodEnd, today)
+            )
+          )
+          .limit(1);
+
+        let updatedUsage: SubscriptionUsage;
+        
+        if (usage) {
+          // Update existing usage
+          [updatedUsage] = await tx
+            .update(subscriptionUsage)
+            .set({
+              used: (usage.used || 0) + quantity,
+              updatedAt: new Date()
+            })
+            .where(eq(subscriptionUsage.id, usage.id))
+            .returning();
+        } else {
+          // Create new usage record
+          [updatedUsage] = await tx
+            .insert(subscriptionUsage)
+            .values({
+              id: `usage_${uuidv4()}`,
+              subscriptionId,
+              feature,
+              used: quantity,
+              limit: plan.maxUsage || null,
+              periodStart: today,
+              periodEnd: new Date(today.getTime() + 30 * 24 * 60 * 60 * 1000), // 30 days
+              resetAt: new Date(today.getTime() + 30 * 24 * 60 * 60 * 1000), // 30 days
+              createdAt: new Date(),
+              updatedAt: null
+            })
+            .returning();
+        }
+
+        return updatedUsage;
+      } catch (error) {
+        logger.error('Error tracking subscription usage', { 
+          error, 
+          subscriptionId, 
+          userId, 
+          feature, 
+          quantity 
+        });
+        throw new InternalServerError('Failed to track subscription usage');
       }
     });
   }
 
-  // Webhook event types
+  /**
+   * Get a subscription by ID
+   */
+  private async getSubscription(id: string): Promise<DbSubscription> {
+    const [subscription] = await db
+      .select()
+      .from(subscriptions)
+      .where(eq(subscriptions.id, id))
+      .limit(1);
+
+    if (!subscription) {
+      throw new NotFoundError('Subscription not found');
+    }
+
+    return subscription;
+  }
+
+  // Webhook event type
 type WebhookEvent = {
   type: 'payment.captured' | 'payment.failed' | 'subscription.updated' | 'subscription.cancelled';
   data: PaymentCapturedPayload | PaymentFailedPayload | SubscriptionUpdatedPayload | SubscriptionCancelledPayload;
@@ -516,7 +561,7 @@ type SubscriptionCancelledPayload = {
           await this.handleSubscriptionCancelled(event.data as SubscriptionCancelledPayload);
           break;
         default:
-          logger.warn(`Unhandled webhook event type: ${(event as any).type}`);
+          console.warn(`Unhandled webhook event type: ${(event as any).type}`);
       }
     } catch (error) {
       logger.error(`Error handling webhook event ${event.type}:`, error);
@@ -552,155 +597,28 @@ type SubscriptionCancelledPayload = {
         paymentId: payload.id,
         orderId: payload.order_id
       });
-      throw new InternalServerError('Failed to process payment captured event');
-    }
-  }
-
-  /**
-   * Handle payment failed event
-   */
-  private async handlePaymentFailed(payload: PaymentFailedPayload): Promise<void> {
-    try {
-      const { id: paymentId, error_code, error_description } = payload;
-      
-      // Find the invoice for this payment
-      const invoice = await db.query.subscriptionInvoices.findFirst({
-        where: (invoices, { eq }) => eq(invoices.paymentId, paymentId)
-      });
-      
-      if (invoice) {
-        // Update invoice status to failed
-        await db.update(subscriptionInvoices)
-          .set({ 
-            status: 'failed',
-            updatedAt: new Date(),
-            error: {
-              code: error_code,
-              description: error_description,
-              failedAt: new Date().toISOString()
-            }
-          })
-          .where(eq(subscriptionInvoices.id, invoice.id));
-        
-        logger.warn(`Payment failed for invoice ${invoice.id}`, { 
-          paymentId, 
-          errorCode: error_code, 
-          errorDescription: error_description 
-        });
-        
-        // Optionally notify user of payment failure
-        await this.notifyPaymentFailure(invoice.userId, {
-          invoiceId: invoice.id,
-          amount: invoice.amount,
-          currency: invoice.currency,
           error: {
             code: error_code,
-            description: error_description
+            description: error_description,
+            failedAt: new Date().toISOString()
           }
-        });
-      } else {
-        logger.warn('Received payment failed webhook for unknown payment', { paymentId });
-      }
-        canceledAt: new Date(),
-        updatedAt: new Date(),
-      })
-      .where(eq(subscriptions.id, id));
-      
-    logger.info('Subscription cancelled', { subscriptionId: id });
-  }
-
-  // Billing Cycle Management
-  async processRecurringBilling(): Promise<void> {
-    try {
-      // Get all active subscriptions that are due for renewal
-      const today = new Date();
-      const dueSubscriptions = await db
-        .select()
-        .from(subscriptions)
-        .leftJoin(subscriptionPlans, eq(subscriptions.planId, subscriptionPlans.id))
-        .where(
-          and(
-            eq(subscriptions.status, 'active'),
-            lte(subscriptions.currentPeriodEnd, today)
-          )
-        );
-
-      // Process each subscription
-      for (const row of dueSubscriptions) {
-        try {
-          if (!row.subscriptionPlans) {
-            logger.warn('Subscription plan not found for subscription', { subscriptionId: row.subscriptions.id });
-            continue;
-          }
-
-          const subscription = row.subscriptions;
-          const plan = row.subscriptionPlans;
-
-          // Create invoice for the new billing period
-          const invoice = await this.createInvoice({
-            subscriptionId: subscription.id,
-            userId: subscription.userId,
-            amount: typeof plan.price === 'string' ? parseFloat(plan.price) : plan.price,
-            currency: plan.currency || 'USD',
-            description: `Recurring payment for ${plan.name} (${plan.billingCycle})`
-          });
-
-          // Process payment
-          const payment = await this.razorpayService.createRazorpayOrder({
-            amount: Math.round(invoice.amount * 100), // Convert to paise
-            currency: invoice.currency,
-            receipt: `invoice_${invoice.id}`,
-            payment_capture: 1,
-            notes: {
-              invoiceId: invoice.id,
-              subscriptionId: subscription.id,
-              type: 'recurring_payment'
-            }
-          receipt: `inv_${invoice.id}`,
-          notes: {
-            subscriptionId: subscription.id,
-            invoiceId: invoice.id,
-            type: 'recurring',
-          },
-        });
-
-        // Update invoice with payment info
-        await db.update(subscriptionInvoices)
-          .set({
-            paymentIntentId: payment.id,
-            status: payment.status === 'captured' ? 'paid' : 'open',
-            paidAt: payment.status === 'captured' ? new Date() : null,
-            updatedAt: new Date(),
-          })
-          .where(eq(subscriptionInvoices.id, invoice.id));
-
-        // Update subscription period
-        const periodStart = subscription.currentPeriodEnd;
-        const periodEnd = subscription.plan.billingCycle === 'yearly'
-          ? addMonths(periodStart, 12)
-          : addMonths(periodStart, 1);
-
-        await db.update(subscriptions)
-          .set({
-            currentPeriodStart: periodStart,
-            currentPeriodEnd: periodEnd,
-            updatedAt: new Date(),
-          })
-          .where(eq(subscriptions.id, subscription.id));
-
-        // TODO: Send payment confirmation email
-
-      } catch (error) {
-        logger.error('Error processing recurring billing', {
-          error,
-          subscriptionId: subscription.id,
-          userId: subscription.userId,
-        });
-
-        // Update subscription status if payment failed
-        if (error instanceof Error && error.message.includes('payment failed')) {
-          await db.update(subscriptions)
-            .set({
+        })
+        .where(eq(subscriptionInvoices.id, invoice.id));
+        
+      logger.warn(`Payment failed for invoice ${invoice.id}`, { 
+        paymentId, 
+        errorCode: error_code, 
+        errorDescription: error_description 
+      });
+        
+      // Optionally notify user of payment failure
+      await this.notifyPaymentFailure(invoice.userId, {
+        invoiceId: invoice.id,
+        amount: invoice.amount,
+        currency: invoice.currency,
+        error: {
+          code: error_code,
+          description: error_description
               status: 'past_due',
               updatedAt: new Date(),
             })

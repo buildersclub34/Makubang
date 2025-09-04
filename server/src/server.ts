@@ -6,6 +6,7 @@ import { config } from 'dotenv';
 import { connectDB } from './config/db';
 import authRoutes from './routes/auth.routes';
 import { errorHandler } from './middleware/error.middleware';
+import mongoose from 'mongoose';
 
 // Load environment variables
 config();

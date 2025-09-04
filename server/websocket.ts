@@ -1,10 +1,10 @@
 import { Server, Socket } from 'socket.io';
 import jwt from 'jsonwebtoken';
-import { db } from './db';
-import { users } from '../shared/schema';
-import { eq } from 'drizzle-orm';
+import { getDatabase } from './db-mongo';
+import { WebSocketService } from './lib/websocket/WebSocketService';
+import { ObjectId } from 'mongodb';
 
-const JWT_SECRET = process.env.JWT_SECRET || 'your-secret-key'; // Keep JWT_SECRET for local usage if env var is not set
+const JWT_SECRET = process.env.JWT_SECRET || 'your-secret-key';
 
 interface AuthenticatedSocket extends Socket {
   userId?: string;
@@ -12,6 +12,9 @@ interface AuthenticatedSocket extends Socket {
 }
 
 export function setupWebSocket(io: Server) {
+  // Initialize WebSocketService singleton
+  const wsService = WebSocketService.getInstance(io);
+  
   // Authentication middleware for socket connections
   io.use(async (socket: AuthenticatedSocket, next) => {
     try {
@@ -22,22 +25,19 @@ export function setupWebSocket(io: Server) {
       }
 
       const decoded = jwt.verify(token, JWT_SECRET) as any;
-
+      const db = await getDatabase();
+      
       // Verify user exists and is active
-      const [user] = await db.select({
-        id: users.id,
-        role: users.role,
-        isActive: users.isActive
-      })
-      .from(users)
-      .where(eq(users.id, decoded.userId))
-      .limit(1);
+      const user = await db.collection('users').findOne(
+        { _id: new ObjectId(decoded.userId) },
+        { projection: { _id: 1, role: 1, isActive: 1 } }
+      );
 
       if (!user || !user.isActive) {
         return next(new Error('Invalid user'));
       }
 
-      socket.userId = user.id;
+      socket.userId = user._id.toString();
       socket.userRole = user.role;
 
       next();
@@ -116,8 +116,10 @@ export function setupWebSocket(io: Server) {
     });
   });
 
-  return io;
+  return wsService;
 }
+
+export { WebSocketService };
 
 // Helper function to send notifications to specific users
 export function sendToUser(io: Server, userId: string, event: string, data: any) {

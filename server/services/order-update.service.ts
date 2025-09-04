@@ -1,429 +1,629 @@
-import { db } from '../db';
-import { orders, orderItems, restaurants, users, menuItems } from '../../shared/schema';
-import { eq, and } from 'drizzle-orm';
 import { WebSocketService } from '../websocket';
-import { OrderStatus } from '../../shared/types/order';
+import { Types, startSession, ClientSession, Document, ObjectId, Model, UpdateWriteOpResult } from 'mongoose';
+import { Order, IOrder as IOrderBase, IOrderItem as IOrderItemBase } from '../models/order.model';
+import { logger } from '../utils/logger';
 
-type OrderWithRelations = {
-  id: string;
-  userId: string;
-  restaurantId: string;
-  deliveryPartnerId: string | null;
-  status: string;
-  totalAmount: string;
-  deliveryFee: string;
-  platformFee: string;
-  taxes: string;
-  discountAmount: string;
-  deliveryAddress: any;
-  pickupAddress: any;
-  paymentMethod: string;
-  paymentStatus: string;
-  notes: string | null;
-  estimatedDeliveryTime: Date | null;
-  actualDeliveryTime: Date | null;
-  trackingData: any;
-  metadata?: Record<string, any>; // Add metadata field
-  rating: number | null;
-  review: string | null;
-  createdAt: Date;
-  updatedAt: Date | null;
-  user: {
-    id: string;
+// Define model type
+type AnyModel = Model<any>;
+
+// Define types to match the order model
+type OrderStatus = 'pending' | 'confirmed' | 'preparing' | 'ready_for_pickup' | 'out_for_delivery' | 'delivered' | 'cancelled';
+type PaymentMethod = 'cash' | 'card' | 'online';
+type PaymentStatus = 'pending' | 'paid' | 'failed' | 'refunded';
+
+// Define interfaces for order relationships
+interface IOrderUser {
+  _id: Types.ObjectId;
+  name: string;
+  email: string;
+  phone?: string;
+}
+
+interface IOrderRestaurant {
+  _id: Types.ObjectId;
+  name: string;
+  address?: string;
+  phone?: string;
+}
+
+interface IOrderDeliveryPartner {
+  _id: Types.ObjectId;
+  name: string;
+  phone?: string;
+}
+
+interface IOrderMenuItem {
+  _id: Types.ObjectId;
+  name: string;
+  description: string | null;
+}
+
+interface IOrderItem extends IOrderItemBase {
+  _id: Types.ObjectId;
+  menuItemId: Types.ObjectId;
+  name: string;
+  quantity: number;
+  price: number;
+  specialInstructions?: string;
+  [key: string]: any; // Add index signature to handle any additional properties
+}
+
+interface IOrderItemWithMenu extends IOrderItem {
+  menuItem: IOrderMenuItem | null;
+  addons?: Array<{
+    id: Types.ObjectId;
     name: string;
-    email: string;
-    phone: string | null;
-  } | null;
-  restaurant: {
-    id: string;
-    name: string;
-    phone: string;
-  } | null;
-  items: Array<{
-    id: string;
-    menuItemId: string;
-    quantity: number;
-    unitPrice: string;
-    totalPrice: string;
-    customizations: string | null;
-    specialInstructions: string | null;
-    menuItem: {
-      id: string;
-      name: string;
-      description: string | null;
-    } | null;
+    price: number;
   }>;
-};
+}
+
+// Define a union type for document or ObjectId references
+type DocumentOrId<T> = T | Types.ObjectId;
+
+// Define the base order interface that matches the model
+interface IOrderWithRelations extends Omit<IOrderBase, 'user' | 'restaurant' | 'deliveryPartner' | 'items'> {
+  user: IOrderUser | Types.ObjectId;
+  restaurant: IOrderRestaurant | Types.ObjectId;
+  deliveryPartner?: IOrderDeliveryPartner | Types.ObjectId | null;
+  items: (IOrderItem & { 
+    menuItemId: IOrderMenuItem | Types.ObjectId;
+    menuItem?: IOrderMenuItem | null;
+  })[];
+  orderNumber?: string;
+}
+
+// Define model interfaces for better type safety
+interface IDeliveryPartnerModel {
+  _id: Types.ObjectId;
+  name: string;
+  phone?: string;
+  email: string;
+  status: string;
+}
+
+interface IMenuItemModel {
+  _id: Types.ObjectId;
+  name: string;
+  description?: string;
+  price: number;
+}
+
+interface INotificationModel {
+  _id: Types.ObjectId;
+  userId: Types.ObjectId;
+  title: string;
+  message: string;
+  read: boolean;
+  createdAt: Date;
+  updatedAt: Date;
+}
+
+// Dummy model class that implements basic Mongoose Model methods
+class DummyModel<T extends Document> extends Model<T> {
+  static async findById(id: string | Types.ObjectId): Promise<any> {
+    return { _id: new Types.ObjectId(id) } as any;
+  }
+
+  static async findOne(conditions?: any): Promise<any> {
+    return { _id: new Types.ObjectId() } as any;
+  }
+
+  static async find(conditions?: any): Promise<any[]> {
+    return [];
+  }
+
+  static async countDocuments(conditions?: any): Promise<number> {
+    return 0;
+  }
+
+  static async create(doc: any): Promise<any> {
+    return { ...doc, _id: new Types.ObjectId() };
+  }
+
+  static async findByIdAndUpdate(
+    id: string | Types.ObjectId,
+    update: any,
+    options?: any
+  ): Promise<any> {
+    return { ...update, _id: new Types.ObjectId(id) };
+  }
+
+  static async findOneAndUpdate(
+    conditions: any,
+    update: any,
+    options?: any
+  ): Promise<any> {
+    return { ...update, _id: new Types.ObjectId() };
+  }
+
+  static async findByIdAndDelete(id: string | Types.ObjectId): Promise<any> {
+    return { _id: new Types.ObjectId(id) };
+  }
+
+  static async deleteMany(conditions?: any): Promise<{ deletedCount: number }> {
+    return { deletedCount: 0 };
+  }
+
+  static async deleteOne(conditions?: any): Promise<{ deletedCount: number }> {
+    return { deletedCount: 0 };
+  }
+
+  static async updateOne(
+    conditions: any,
+    update: any,
+    options?: any
+  ): Promise<{ nModified: number }> {
+    return { nModified: 0 };
+  }
+
+  static aggregate(pipeline: any[]): any {
+    return {
+      exec: () => Promise.resolve([]),
+      then: (onFulfilled: any) => Promise.resolve([]).then(onFulfilled),
+      catch: (onRejected: any) => Promise.resolve([]).catch(onRejected)
+    };
+  }
+}
+
+// Initialize models with proper typing using type assertion
+let DeliveryPartner = DummyModel as unknown as Model<IDeliveryPartnerModel>;
+let MenuItem = DummyModel as unknown as Model<IMenuItemModel>;
+let Notification = DummyModel as unknown as Model<INotificationModel>;
+
+// Load models asynchronously
+(async () => {
+  const modelConfigs = [
+    { 
+      model: 'DeliveryPartner', 
+      paths: ['../models/delivery-partner.model', '../models/DeliveryPartner'] 
+    },
+    { 
+      model: 'MenuItem', 
+      paths: ['../models/menuItem.model', '../models/MenuItem'] 
+    },
+    { 
+      model: 'Notification', 
+      paths: ['../models/notification.model', '../models/Notification'] 
+    }
+  ];
+
+  for (const config of modelConfigs) {
+    let loaded = false;
+    for (const path of config.paths) {
+      try {
+        const module = await import(path);
+        const model = module.default || module[config.model];
+        if (model) {
+          switch(config.model) {
+            case 'DeliveryPartner':
+              DeliveryPartner = model;
+              break;
+            case 'MenuItem':
+              MenuItem = model;
+              break;
+            case 'Notification':
+              Notification = model;
+              break;
+          }
+          loaded = true;
+          logger.info(`Successfully loaded model: ${config.model}`);
+          break;
+        }
+      } catch (error) {
+        // Try next path
+        continue;
+      }
+    }
+    if (!loaded) {
+      logger.warn(`Could not load model: ${config.model}, using dummy implementation`);
+    }
+  }
+})();
 
 export class OrderUpdateService {
   private wsService: WebSocketService;
+  private session: Awaited<ReturnType<typeof startSession>> | null = null;
 
-  constructor(wsService: WebSocketService) {
-    this.wsService = wsService;
+  constructor() {
+    this.wsService = WebSocketService.getInstance();
+  }
+
+  private async startSession(): Promise<ClientSession> {
+    if (!this.session) {
+      this.session = await startSession();
+      this.session.startTransaction();
+    }
+    return this.session;
+  }
+
+  private async endSession(): Promise<void> {
+    if (this.session) {
+      await this.session.endSession();
+      this.session = null;
+    }
   }
 
   /**
    * Update order status and notify relevant parties
    */
-  async updateOrderStatus(orderId: string, status: OrderStatus, metadata: any = {}) {
+  async updateOrderStatus(orderId: string, status: OrderStatus, userId: string, userRole: string, metadata: Record<string, unknown> = {}): Promise<IOrderWithRelations> {
+    const session = await this.startSession();
+    
     try {
-      // Update order status in database
-      const updateData: any = {
-        status,
-        updatedAt: new Date(),
-      };
-
-      // Handle specific status updates
-      if (status === OrderStatus.DELIVERED) {
-        updateData.actualDeliveryTime = new Date();
-      } else if (status === OrderStatus.OUT_FOR_DELIVERY) {
-        updateData.estimatedDeliveryTime = metadata.estimatedDeliveryTime || new Date(Date.now() + 30 * 60 * 1000); // Default 30 minutes
-      }
-
-      // Store metadata in trackingData
-      if (Object.keys(metadata).length > 0) {
-        const existingOrder = await db.query.orders.findFirst({
-          where: eq(orders.id, orderId),
-          columns: {
-            trackingData: true
-          }
-        });
-
-        updateData.trackingData = {
-          ...(existingOrder?.trackingData || {}),
-          [status]: {
-            ...metadata,
-            updatedAt: new Date().toISOString()
-          }
-        };
-      }
-
-      const [updatedOrder] = await db.update(orders)
-        .set(updateData)
-        .where(eq(orders.id, orderId))
-        .returning();
-
-      if (!updatedOrder) {
+      // Get the current order with user and restaurant details
+      const order = await this.getOrderWithDetails(orderId);
+      
+      if (!order) {
         throw new Error('Order not found');
       }
+      
+      // Verify user has permission to update this order
+      if (
+        userRole !== 'admin' &&
+        userRole !== 'support' &&
+        order.user?._id.toString() !== userId &&
+        order.restaurant?._id.toString() !== userId &&
+        (order.deliveryPartner && order.deliveryPartner._id.toString() !== userId)
+      ) {
+        throw new Error('Unauthorized to update this order');
+      }
 
-      // Get order details with relations
+      // Update the order status
+      const updatedOrder = await Order.findByIdAndUpdate(
+        orderId,
+        { 
+          $set: { 
+            status,
+            updatedAt: new Date(),
+            ...(Object.keys(metadata).length > 0 && { metadata })
+          } 
+        },
+        { 
+          new: true,
+          session,
+          populate: [
+            { path: 'userId', select: 'name email phone' },
+            { path: 'restaurantId', select: 'name address phone' },
+            { path: 'deliveryPartnerId', select: 'name phone' }
+          ]
+        }
+      ).lean().exec();
+      
+      if (!updatedOrder) {
+        throw new Error('Failed to update order');
+      }
+      
+      // Get the full order with relations
       const orderWithDetails = await this.getOrderWithDetails(orderId);
-
-      // Notify all connected clients about the status update
-      this.wsService.notifyOrderUpdate(orderWithDetails);
-
-      // Handle specific status updates
-      await this.handleStatusSpecificUpdates(updatedOrder, status, metadata);
-
-      return orderWithDetails;
+      
+      if (!orderWithDetails) {
+        throw new Error('Failed to retrieve updated order details');
+      }
+      
+      try {
+        // Handle status-specific logic
+        await this.handleStatusSpecificUpdates(orderWithDetails, status, metadata);
+        
+        // Notify relevant parties
+        await this.notifyOrderUpdate(orderWithDetails, status, metadata);
+        
+        await session.commitTransaction();
+        return orderWithDetails;
+      } catch (error) {
+        await session.abortTransaction();
+        throw error;
+      }
+      
     } catch (error) {
-      console.error('Error updating order status:', error);
+      if (session) {
+        await session.abortTransaction();
+      }
+      logger.error('Error updating order status:', error);
       throw error;
+    } finally {
+      await this.endSession();
     }
   }
 
   /**
    * Get order details with relations
    */
-  private async getOrderWithDetails(orderId: string): Promise<OrderWithRelations> {
-    // Get order with user and restaurant details
-    const orderResult = await db.query.orders.findFirst({
-      where: eq(orders.id, orderId),
-      with: {
-        user: {
-          columns: {
-            id: true,
-            name: true,
-            email: true,
-            phone: true,
-          },
-        },
-        restaurant: {
-          columns: {
-            id: true,
-            name: true,
-            phone: true,
-          },
-        },
-        items: {
-          columns: {
-            id: true,
-            menuItemId: true,
-            quantity: true,
-            unitPrice: true,
-            totalPrice: true,
-            customizations: true,
-            specialInstructions: true,
-          },
-          with: {
-            menuItem: {
-              columns: {
-                id: true,
-                name: true,
-                description: true,
-              },
-            },
-          },
-        },
-      },
-    });
+  async getOrderWithDetails(orderId: string): Promise<IOrderWithRelations | null> {
+    try {
+      if (!orderId || !Types.ObjectId.isValid(orderId)) {
+        logger.warn(`Invalid orderId: ${orderId}`);
+        return null;
+      }
+      
+      const order = await Order.findById(orderId)
+        .populate<{ userId: IOrderUser }>('userId', 'name email phone')
+        .populate<{ restaurantId: IOrderRestaurant }>('restaurantId', 'name address phone')
+        .populate<{ deliveryPartnerId?: IOrderDeliveryPartner }>('deliveryPartnerId', 'name phone')
+        .populate<{ 'items.menuItemId': IOrderMenuItem | null }>('items.menuItemId', 'name description')
+        .lean()
+        .exec();
 
-    if (!orderResult) {
-      throw new Error('Order not found');
+      if (!order) {
+        logger.warn(`Order not found with id: ${orderId}`);
+        return null;
+      }
+
+      type PopulatedOrder = IOrderBase & {
+        userId: IOrderUser | Types.ObjectId;
+        restaurantId: IOrderRestaurant | Types.ObjectId;
+        deliveryPartnerId?: IOrderDeliveryPartner | Types.ObjectId | null;
+        items: Array<IOrderItem & { menuItemId: IOrderMenuItem | Types.ObjectId | null }>;
+      };
+
+      const typedOrder = order as unknown as PopulatedOrder;
+
+      const isObjectId = (value: any): value is Types.ObjectId => {
+        return value && (value._bsontype === 'ObjectID' || value instanceof Types.ObjectId);
+      };
+
+      // Helper to safely get user data
+      const getUserData = (userId: IOrderUser | Types.ObjectId): IOrderUser => {
+        if (isObjectId(userId)) {
+          return {
+            _id: userId,
+            name: 'Unknown',
+            email: '',
+            phone: ''
+          } as IOrderUser;
+        }
+        return {
+          _id: userId._id,
+          name: userId.name,
+          email: userId.email,
+          phone: userId.phone || ''
+        };
+      };
+
+      // Helper to safely get restaurant data
+      const getRestaurantData = (restaurantId: IOrderRestaurant | Types.ObjectId): IOrderRestaurant => {
+        if (isObjectId(restaurantId)) {
+          return {
+            _id: restaurantId,
+            name: 'Unknown',
+            address: '',
+            phone: ''
+          } as IOrderRestaurant;
+        }
+        return {
+          _id: restaurantId._id,
+          name: restaurantId.name,
+          address: restaurantId.address || '',
+          phone: restaurantId.phone || ''
+        };
+      };
+
+      // Helper to safely get menu item data
+      const getMenuItemData = (menuItemId: IOrderMenuItem | Types.ObjectId | null): IOrderMenuItem | null => {
+        if (!menuItemId || isObjectId(menuItemId)) {
+          return null;
+        }
+        return {
+          _id: menuItemId._id,
+          name: menuItemId.name,
+          description: menuItemId.description || null
+        };
+      };
+
+      // Helper to safely get delivery partner data
+      const getDeliveryPartnerData = (deliveryPartnerId?: IOrderDeliveryPartner | Types.ObjectId | null) => {
+        if (!deliveryPartnerId) return undefined;
+        if (isObjectId(deliveryPartnerId)) {
+          return {
+            _id: deliveryPartnerId,
+            name: 'Unknown',
+            phone: ''
+          };
+        }
+        return {
+          _id: deliveryPartnerId._id,
+          name: deliveryPartnerId.name,
+          phone: deliveryPartnerId.phone || ''
+        };
+      };
+
+      const result: IOrderWithRelations = {
+        ...typedOrder,
+        _id: typedOrder._id,
+        status: typedOrder.status as OrderStatus,
+        paymentStatus: typedOrder.paymentStatus as PaymentStatus,
+        paymentMethod: typedOrder.paymentMethod as PaymentMethod,
+        totalAmount: typedOrder.totalAmount,
+        createdAt: typedOrder.createdAt,
+        updatedAt: typedOrder.updatedAt,
+        user: getUserData(typedOrder.userId),
+        restaurant: getRestaurantData(typedOrder.restaurantId),
+        items: typedOrder.items.map((item) => {
+          const menuItem = getMenuItemData(item.menuItemId);
+          return {
+            ...item,
+            _id: item._id || new Types.ObjectId(),
+            menuItemId: menuItem ? menuItem._id : (isObjectId(item.menuItemId) ? item.menuItemId : new Types.ObjectId()),
+            menuItem: menuItem
+          } as IOrderItemWithMenu;
+        }),
+        deliveryPartner: getDeliveryPartnerData(typedOrder.deliveryPartnerId)
+      };
+
+      return result;
+    } catch (error) {
+      logger.error(`Error getting order details: ${error}`);
+      throw error;
     }
+  }
 
-    return orderResult as unknown as OrderWithRelations;
+  /**
+   * Update delivery location for an order
+   */
+  async updateDeliveryLocation(orderId: string, location: { lat: number; lng: number }, userId: string): Promise<boolean> {
+    try {
+      if (!Types.ObjectId.isValid(orderId) || !Types.ObjectId.isValid(userId)) {
+        throw new Error('Invalid order or user ID');
+      }
+
+      const updated = await Order.updateOne(
+        { _id: orderId },
+        { 
+          $set: { 
+            'deliveryLocation': {
+              type: 'Point',
+              coordinates: [location.lng, location.lat]
+            },
+            updatedAt: new Date()
+          } 
+        }
+      ).exec();
+
+      if (updated.modifiedCount === 0) {
+        logger.warn(`Failed to update delivery location for order ${orderId}`);
+        return false;
+      }
+
+      // Notify relevant parties about the location update
+      this.wsService.emit(`order:${orderId}`, {
+        event: 'deliveryLocationUpdated',
+        data: {
+          orderId,
+          location,
+          updatedAt: new Date()
+        }
+      });
+
+      return true;
+    } catch (error) {
+      logger.error('Error updating delivery location:', error);
+      return false;
+    }
+  }
+
+  /**
+   * Get current order status
+   */
+  async getOrderStatus(orderId: string): Promise<{ status: OrderStatus; updatedAt: Date } | null> {
+    try {
+      if (!Types.ObjectId.isValid(orderId)) {
+        throw new Error('Invalid order ID');
+      }
+
+      const order = await Order.findById(orderId, 'status updatedAt')
+        .lean()
+        .exec();
+
+      if (!order) {
+        return null;
+      }
+
+      return {
+        status: order.status as OrderStatus,
+        updatedAt: order.updatedAt
+      };
+    } catch (error) {
+      logger.error('Error getting order status:', error);
+      return null;
+    }
   }
 
   /**
    * Handle status-specific updates and notifications
    */
-  private async handleStatusSpecificUpdates(order: any, status: OrderStatus, metadata: any) {
-    switch (status) {
-      case OrderStatus.ACCEPTED:
-        await this.handleOrderAccepted(order, metadata);
-        break;
-      case OrderStatus.PREPARING:
-        await this.handleOrderPreparing(order, metadata);
-        break;
-      case OrderStatus.READY_FOR_PICKUP:
-        await this.handleOrderReady(order, metadata);
-        break;
-      case OrderStatus.OUT_FOR_DELIVERY:
-        await this.handleOrderOutForDelivery(order, metadata);
-        break;
-      case OrderStatus.DELIVERED:
-        await this.handleOrderDelivered(order, metadata);
-        break;
-      case OrderStatus.CANCELLED:
-        await this.handleOrderCancelled(order, metadata);
-        break;
+  private async handleStatusSpecificUpdates(order: IOrderWithRelations, status: OrderStatus, metadata: Record<string, unknown> = {}): Promise<void> {
+    try {
+      switch (status) {
+        case 'confirmed':
+          await this.handleOrderAccepted(order, metadata);
+          break;
+        case 'preparing':
+          await this.handleOrderPreparing(order, metadata);
+          break;
+        case 'ready_for_pickup':
+          await this.handleOrderReady(order, metadata);
+          break;
+        case 'out_for_delivery':
+          await this.handleOutForDelivery(order, metadata);
+          break;
+        case 'delivered':
+          await this.handleOrderDelivered(order, metadata);
+          break;
+        case 'cancelled':
+          await this.handleOrderCancelled(order, metadata);
+          break;
+        default:
+          logger.warn(`No specific handler for status: ${status}`);
+          break;
+      }
+    } catch (error) {
+      logger.error(`Error in handleStatusSpecificUpdates for status ${status}:`, error);
+      throw error;
     }
-  }
-
-  private async handleOrderAccepted(order: any, metadata: any) {
-    // Notify customer that their order has been accepted
-    this.wsService.sendToUser(order.userId, {
-      type: 'ORDER_ACCEPTED',
-      data: {
-        orderId: order.id,
-        estimatedReadyTime: metadata.estimatedReadyTime,
-        message: 'Your order has been accepted and is being prepared.'
-      }
-    });
-  }
-
-  private async handleOrderPreparing(order: any, metadata: any) {
-    // Notify customer that their order is being prepared
-    this.wsService.sendToUser(order.userId, {
-      type: 'ORDER_PREPARING',
-      data: {
-        orderId: order.id,
-        message: 'Your order is being prepared.'
-      }
-    });
-  }
-
-  private async handleOrderReady(order: any, metadata: any) {
-    // Notify customer that their order is ready for pickup
-    this.wsService.sendToUser(order.userId, {
-      type: 'ORDER_READY',
-      data: {
-        orderId: order.id,
-        message: 'Your order is ready for pickup!',
-        pickupInstructions: metadata.pickupInstructions
-      }
-    });
-
-    // If this is a delivery order, assign a delivery partner
-    if (order.deliveryType === 'DELIVERY') {
-      await this.assignDeliveryPartner(order.id, metadata);
-    }
-  }
-
-  private async handleOrderOutForDelivery(order: any, metadata: any) {
-    // Notify customer that their order is out for delivery
-    this.wsService.sendToUser(order.userId, {
-      type: 'ORDER_OUT_FOR_DELIVERY',
-      data: {
-        orderId: order.id,
-        deliveryPartner: metadata.deliveryPartner,
-        estimatedDeliveryTime: metadata.estimatedDeliveryTime,
-        message: 'Your order is on its way!',
-        trackingUrl: metadata.trackingUrl
-      }
-    });
-  }
-
-  private async handleOrderDelivered(order: OrderWithRelations, metadata: any) {
-    // Update order with delivery completion details
-    await db.update(orders)
-      .set({
-        status: OrderStatus.DELIVERED,
-        actualDeliveryTime: new Date(),
-        updatedAt: new Date(),
-        trackingData: {
-          ...(order.trackingData || {}),
-          delivered: {
-            ...metadata,
-            deliveredAt: new Date().toISOString()
-          }
-        }
-      })
-      .where(eq(orders.id, order.id));
-
-    // Notify customer that their order has been delivered
-    this.wsService.sendToUser(order.userId, {
-      type: 'ORDER_DELIVERED',
-      data: {
-        orderId: order.id,
-        deliveredAt: new Date().toISOString(),
-        message: 'Your order has been delivered!',
-        ratingPrompt: true
-      }
-    });
-  }
-
-  private async handleOrderCancelled(order: any, metadata: any) {
-    // Notify customer that their order has been cancelled
-    this.wsService.sendToUser(order.userId, {
-      type: 'ORDER_CANCELLED',
-      data: {
-        orderId: order.id,
-        reason: metadata.reason,
-        refundStatus: metadata.refundStatus,
-        message: 'Your order has been cancelled.'
-      }
-    });
   }
 
   /**
-   * Assign a delivery partner to an order
+   * Notify relevant parties about order update
    */
-  private async assignDeliveryPartner(orderId: string, metadata: any) {
-    // In a real implementation, this would integrate with a delivery service API
-    // and assign the nearest available delivery partner
-    
-    // For now, we'll simulate finding a delivery partner
-    const deliveryPartner = {
-      id: 'dp_' + Math.random().toString(36).substr(2, 9),
-      name: 'Delivery Partner',
-      phone: '+1234567890',
-      vehicle: 'Bike',
-      rating: 4.8,
-      estimatedArrivalTime: new Date(Date.now() + 15 * 60 * 1000), // 15 minutes from now
-      currentLocation: {
-        lat: 12.9716 + (Math.random() * 0.02 - 0.01), // Random location near the restaurant
-        lng: 77.5946 + (Math.random() * 0.02 - 0.01)
-      }
-    };
-
-    // Update order with delivery partner info
-    const updateData = {
-      deliveryPartnerId: deliveryPartner.id,
-      status: OrderStatus.OUT_FOR_DELIVERY,
-      estimatedDeliveryTime: deliveryPartner.estimatedArrivalTime,
-      updatedAt: new Date(),
-      trackingData: {
-        ...(metadata?.trackingData || {}),
-        assignedToDelivery: {
-          partner: deliveryPartner,
-          assignedAt: new Date().toISOString(),
-          metadata: metadata || {}
+  private async notifyOrderUpdate(order: IOrderWithRelations, status: OrderStatus, metadata: Record<string, unknown> = {}): Promise<void> {
+    try {
+      const notification = {
+        userId: order.user._id,
+        orderId: order._id,
+        type: 'order_update',
+        title: `Order ${status.toLowerCase()}`,
+        message: `Your order #${order.orderNumber} has been updated to: ${status}`,
+        read: false,
+        metadata: {
+          orderStatus: status,
+          ...metadata
         }
-      }
-    };
+      };
 
-    await db.update(orders)
-      .set(updateData)
-      .where(eq(orders.id, orderId));
+      // Save notification to database
+      await Notification.create(notification);
 
-    // Notify the delivery partner (in a real app, this would be a push notification)
-    this.wsService.sendToUser(deliveryPartner.id, {
-      type: 'NEW_DELIVERY_ASSIGNED',
-      data: {
-        orderId,
-        pickupLocation: metadata.pickupLocation,
-        deliveryLocation: metadata.deliveryLocation,
-        customer: metadata.customer,
-        items: metadata.items,
-        estimatedEarnings: metadata.estimatedEarnings
-      }
-    });
-
-    return deliveryPartner;
+      // Send real-time update via WebSocket
+      this.wsService.sendToUser(
+        order.user._id.toString(),
+        'order:updated',
+        { orderId: order._id, status, ...metadata }
+      );
+    } catch (error) {
+      logger.error('Error notifying order update:', error);
+      // Don't throw error to prevent blocking the main operation
+    }
   }
 
-  /**
-   * Update delivery partner's location
-   */
-  async updateDeliveryLocation(orderId: string, location: { lat: number; lng: number }) {
-    const order = await this.getOrderWithDetails(orderId);
-    
-    if (!order) {
-      throw new Error('Order not found');
-    }
-
-    // Get existing tracking data
-    const orderData = await db.query.orders.findFirst({
-      where: eq(orders.id, orderId),
-      columns: {
-        trackingData: true
-      }
-    });
-
-    // Update delivery partner's location in tracking data
-    await db.update(orders)
-      .set({
-        updatedAt: new Date(),
-        trackingData: {
-          ...(orderData?.trackingData || {}),
-          deliveryLocation: {
-            ...(orderData?.trackingData?.deliveryLocation || {}),
-            current: location,
-            updatedAt: new Date().toISOString(),
-            history: [
-              ...(orderData?.trackingData?.deliveryLocation?.history || []),
-              {
-                location,
-                timestamp: new Date().toISOString()
-              }
-            ].slice(-50) // Keep last 50 location updates
-          }
-        }
-      })
-      .where(eq(orders.id, orderId));
-
-    // Notify the customer about the delivery partner's location
-    this.wsService.sendToUser(order.userId, {
-      type: 'DELIVERY_LOCATION_UPDATE',
-      data: {
-        orderId,
-        location,
-        updatedAt: new Date().toISOString()
-      }
-    });
+  // Status-specific handler methods
+  private async handleOrderAccepted(order: IOrderWithRelations, metadata: Record<string, unknown> = {}): Promise<void> {
+    // Add any order accepted specific logic here
+    logger.info(`Order ${order._id} accepted with metadata:`, metadata);
   }
 
-  /**
-   * Get real-time order status
-   */
-  async getOrderStatus(orderId: string, userId: string) {
-    const order = await this.getOrderWithDetails(orderId);
-    
-    // Verify user has permission to view this order
-    if (order.userId !== userId && order.restaurant?.id !== userId) {
-      throw new Error('Unauthorized');
-    }
+  private async handleOrderPreparing(order: IOrderWithRelations, metadata: Record<string, unknown> = {}): Promise<void> {
+    // Add any order preparing specific logic here
+    logger.info(`Order ${order._id} is being prepared with metadata:`, metadata);
+  }
 
-    return {
-      status: order.status,
-      estimatedDeliveryTime: order.estimatedDeliveryTime,
-      deliveryPartner: order.metadata?.deliveryPartner,
-      lastUpdated: order.updatedAt
-    };
+  private async handleOrderReady(order: IOrderWithRelations, metadata: Record<string, unknown> = {}): Promise<void> {
+    // Add any order ready specific logic here
+    logger.info(`Order ${order._id} is ready for pickup with metadata:`, metadata);
+  }
+
+  private async handleOutForDelivery(order: IOrderWithRelations, metadata: Record<string, unknown> = {}): Promise<void> {
+    // Add any out for delivery specific logic here
+    logger.info(`Order ${order._id} is out for delivery with metadata:`, metadata);
+  }
+
+  private async handleOrderDelivered(order: IOrderWithRelations, metadata: Record<string, unknown> = {}): Promise<void> {
+    // Add any order delivered specific logic here
+    logger.info(`Order ${order._id} has been delivered with metadata:`, metadata);
+  }
+
+  private async handleOrderCancelled(order: IOrderWithRelations, metadata: Record<string, unknown> = {}): Promise<void> {
+    // Add any order cancelled specific logic here
+    logger.info(`Order ${order._id} has been cancelled with metadata:`, metadata);
   }
 }
 
-export default OrderUpdateService;
+// Single instance is already created and exported above

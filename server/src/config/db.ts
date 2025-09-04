@@ -1,70 +1,76 @@
-import { drizzle } from 'drizzle-orm/postgres-js';
-import postgres from 'postgres';
-import * as schema from '../../shared/schema';
+import mongoose from 'mongoose';
 
-// Get database URL from environment variables
-const databaseUrl = process.env.DATABASE_URL;
+// Get MongoDB URI from environment variables
+const MONGODB_URI = process.env.MONGODB_URI || 'mongodb://localhost:27017/makubang';
 
-if (!databaseUrl) {
-  throw new Error('DATABASE_URL environment variable is required');
-}
+// Connection events
+mongoose.connection.on('connected', () => {
+  console.log('MongoDB connected successfully');
+});
 
-// Create a postgres client
-const queryClient = postgres(databaseUrl);
+mongoose.connection.on('error', (err) => {
+  console.error('MongoDB connection error:', err);
+});
 
-// Create drizzle instance with schema
-export const db = drizzle(queryClient, { 
-  schema,
-  logger: process.env.NODE_ENV === 'development'
+mongoose.connection.on('disconnected', () => {
+  console.log('MongoDB disconnected');
 });
 
 // Helper function to connect to the database
-export const connectDB = async () => {
+export const connectDB = async (): Promise<void> => {
   try {
-    // Test the connection
-    await queryClient`SELECT 1`;
-    console.log('Database connected successfully');
+    if (mongoose.connection.readyState === 0) { // 0 = disconnected
+      await mongoose.connect(MONGODB_URI, {
+        serverSelectionTimeoutMS: 5000, // Timeout after 5s instead of 30s
+        socketTimeoutMS: 45000, // Close sockets after 45 seconds of inactivity
+      });
+    }
   } catch (error) {
-    console.error('Database connection error:', error);
+    console.error('MongoDB connection error:', error);
     process.exit(1);
   }
 };
-
-// Export types for type safety
-export type * from 'drizzle-orm';
-export * as schemaExports from '../../shared/schema';
 
 // Helper function to handle database errors
 export function handleDatabaseError(error: unknown, context?: string): never {
   console.error('Database error', { error, context });
   
   if (error instanceof Error) {
-    // Handle specific error types if needed
+    // Handle specific MongoDB error codes if needed
     if ('code' in error) {
       switch (error.code) {
-        case '23505': // Unique violation
+        case 11000: // Duplicate key error
           throw new Error('A record with these details already exists');
-        case '23503': // Foreign key violation
-          throw new Error('Referenced record not found');
-        case '23502': // Not null violation
-          throw new Error('Required field missing');
+        // Add more MongoDB specific error codes as needed
       }
     }
     throw error;
   }
-  throw new Error('An unexpected database error occurred');
+  throw new Error('An unknown database error occurred');
 }
+
+// Export mongoose for models to use
+export { mongoose };
+
+// Export types for type safety
+export type * from 'mongoose';
 
 // Transaction helper
 export async function withTransaction<T>(
-  callback: (tx: typeof db) => Promise<T>
+  callback: (session: mongoose.ClientSession) => Promise<T>
 ): Promise<T> {
-  return await db.transaction(async (tx) => {
-    try {
-      return await callback(tx);
-    } catch (error) {
-      tx.rollback();
-      throw error;
-    }
-  });
+  const session = await mongoose.startSession();
+  let result: T;
+  
+  try {
+    await session.withTransaction(async () => {
+      result = await callback(session);
+    });
+    await session.endSession();
+    return result!;
+  } catch (error) {
+    await session.abortTransaction();
+    await session.endSession();
+    throw error;
+  }
 }

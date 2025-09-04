@@ -11,7 +11,35 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
 // Load environment variables
-// config(); // This line seems to be removed in the provided changes, assuming it's handled elsewhere or not needed for this specific fix.
+import dotenv from 'dotenv';
+dotenv.config();
+
+// MongoDB Connection
+import { connectDB, getDB } from './lib/mongodb';
+
+// Initialize database connection
+let db: any;
+
+const initDB = async () => {
+  try {
+    db = await connectDB();
+    return db;
+  } catch (error) {
+    console.error('Failed to initialize database:', error);
+    process.exit(1);
+  }
+};
+
+// Initialize the database connection
+export { db };
+
+// Export a function to get the database instance
+export const getDatabase = async () => {
+  if (!db) {
+    await initDB();
+  }
+  return db;
+};
 
 // Import routes and middleware
 import { registerRoutes } from './routes/index.js';
@@ -22,7 +50,7 @@ import WebSocketService from './lib/websocket/server.js';
 const app = express();
 
 // Trust proxy for rate limiting and IP detection
-app.set('trust proxy', 1);
+app.set('trust proxy', 1); // trust first proxy
 
 const httpServer = createServer(app);
 const io = new Server(httpServer, {
@@ -43,7 +71,8 @@ const wsService = new WebSocketService(httpServer, {
 app.locals.wsService = wsService;
 
 // Security middleware
-app.use(helmet({
+// Security headers with Helmet
+const helmetOptions = {
   contentSecurityPolicy: {
     directives: {
       defaultSrc: ["'self'"],
@@ -52,7 +81,9 @@ app.use(helmet({
       imgSrc: ["'self'", "data:", "https:"],
     },
   },
-}));
+} as const; // Use 'as const' to preserve literal types
+
+app.use(helmet(helmetOptions));
 
 app.use(cors({
   origin: process.env.CLIENT_URL || "http://localhost:3000",
@@ -65,7 +96,7 @@ const limiter = rateLimit({
   max: 100, // limit each IP to 100 requests per windowMs
   standardHeaders: true,
   legacyHeaders: false,
-  trustProxy: true, // Trust proxy headers
+  // Remove trustProxy as it's not a valid option in the current version of express-rate-limit
   skip: (req) => {
     // Skip rate limiting for health checks
     return req.path === '/health';
@@ -180,7 +211,7 @@ wsService.on('notification:subscribe', (client, data) => {
 });
 
 
-const PORT = process.env.PORT || 5000;
+const PORT = process.env.PORT ? parseInt(process.env.PORT, 10) : 3000;
 
 httpServer.listen(PORT, '0.0.0.0', () => {
   console.log(`🚀 Makubang Server running on port ${PORT}`);

@@ -1,45 +1,35 @@
-import { db } from '../db';
-import { users } from '../shared/schema';
-import { eq, and } from 'drizzle-orm';
+import { User, IUser } from '../models';
+import { Types } from 'mongoose';
 import bcrypt from 'bcryptjs';
 import { logger } from '../utils/logger';
 
-export const userService = {
+class UserService {
   /**
    * Find a user by ID
    */
-  async findById(id: string) {
+  async findById(id: string): Promise<IUser | null> {
     try {
-      const [user] = await db
-        .select()
-        .from(users)
-        .where(eq(users.id, id))
-        .limit(1);
-      
-      return user || null;
+      if (!Types.ObjectId.isValid(id)) {
+        return null;
+      }
+      return await User.findById(id).select('-password').lean();
     } catch (error) {
       logger.error('Failed to find user by ID:', error);
       throw new Error('Failed to find user');
     }
-  },
+  }
 
   /**
    * Find a user by email
    */
-  async findByEmail(email: string) {
+  async findByEmail(email: string): Promise<IUser | null> {
     try {
-      const [user] = await db
-        .select()
-        .from(users)
-        .where(eq(users.email, email))
-        .limit(1);
-      
-      return user || null;
+      return await User.findOne({ email }).select('+password').lean();
     } catch (error) {
       logger.error('Failed to find user by email:', error);
       throw new Error('Failed to find user');
     }
-  },
+  }
 
   /**
    * Create a new user
@@ -48,8 +38,8 @@ export const userService = {
     email: string;
     password: string;
     name: string;
-    role?: 'user' | 'restaurant' | 'delivery' | 'admin';
-  }) {
+    role?: 'user' | 'restaurant_owner' | 'delivery_partner' | 'admin';
+  }): Promise<IUser> {
     try {
       // Check if user already exists
       const existingUser = await this.findByEmail(data.email);
@@ -57,31 +47,23 @@ export const userService = {
         throw new Error('Email already in use');
       }
 
-      // Hash password
-      const hashedPassword = await bcrypt.hash(data.password, 12);
-
       // Create user
-      const [user] = await db
-        .insert(users)
-        .values({
-          id: crypto.randomUUID(),
-          email: data.email,
-          name: data.name,
-          password: hashedPassword,
-          role: data.role || 'user',
-          isVerified: false,
-          isActive: true,
-          createdAt: new Date(),
-          updatedAt: new Date(),
-        })
-        .returning();
+      const user = await User.create({
+        email: data.email,
+        name: data.name,
+        password: data.password, // Password will be hashed by pre-save hook
+        role: data.role || 'user',
+      });
 
-      return user;
+      // Convert to plain object and remove password
+      const userObject = user.toObject();
+      delete (userObject as any).password;
+      return userObject as IUser;
     } catch (error) {
       logger.error('Failed to create user:', error);
       throw error;
     }
-  },
+  }
 
   /**
    * Update a user
@@ -90,14 +72,42 @@ export const userService = {
     userId: string,
     data: {
       name?: string;
-      avatar?: string | null;
+      phone?: string;
       password?: string;
       isVerified?: boolean;
       isActive?: boolean;
+      avatar?: string;
     }
-  ) {
+  ): Promise<IUser | null> {
     try {
-      const updateData: any = {
+      if (!Types.ObjectId.isValid(userId)) {
+        throw new Error('Invalid user ID');
+      }
+
+      const updateData: any = { ...data };
+      
+      // Handle password update
+      if (data.password) {
+        const salt = await bcrypt.genSalt(10);
+        updateData.password = await bcrypt.hash(data.password, salt);
+      }
+
+      const updatedUser = await User.findByIdAndUpdate(
+        userId,
+        { $set: updateData },
+        { new: true, runValidators: true }
+      ).select('-password').lean();
+
+      if (!updatedUser) {
+        throw new Error('User not found');
+      }
+
+      return updatedUser as IUser;
+    } catch (error) {
+      logger.error('Failed to update user:', error);
+      throw error;
+    }
+  }
         updatedAt: new Date(),
       };
 
@@ -110,74 +120,95 @@ export const userService = {
         updateData.password = await bcrypt.hash(data.password, 12);
       }
 
-      const [user] = await db
-        .update(users)
-        .set(updateData)
-        .where(eq(users.id, userId))
-        .returning();
-
-      return user || null;
-    } catch (error) {
-      logger.error('Failed to update user:', error);
-      throw new Error('Failed to update user');
-    }
-  },
-
   /**
    * Delete a user (soft delete)
    */
-  async deleteUser(userId: string) {
+  async deleteUser(userId: string): Promise<boolean> {
     try {
-      await db
-        .update(users)
-        .set({ 
+      if (!Types.ObjectId.isValid(userId)) {
+        throw new Error('Invalid user ID');
+      }
+
+      const result = await User.findByIdAndUpdate(
+        userId,
+        { 
           isActive: false,
-          email: `deleted-${Date.now()}-${users.email}`,
-          updatedAt: new Date() 
-        })
-        .where(eq(users.id, userId));
+          deletedAt: new Date() 
+        },
+        { new: true }
+      );
       
-      return true;
+      return !!result;
     } catch (error) {
       logger.error('Failed to delete user:', error);
       throw new Error('Failed to delete user');
     }
-  },
+  }
 
   /**
    * Verify user password
    */
-  async verifyPassword(userId: string, password: string) {
+  async verifyPassword(email: string, password: string): Promise<boolean> {
     try {
-      const user = await this.findById(userId);
+      const user = await User.findOne({ email }).select('+password').lean();
       if (!user) {
         return false;
       }
       return await bcrypt.compare(password, user.password);
     } catch (error) {
       logger.error('Failed to verify password:', error);
-      return false;
+      throw new Error('Failed to verify password');
     }
-  },
+  }
 
   /**
    * Change user password
    */
-  async changePassword(userId: string, currentPassword: string, newPassword: string) {
+  async changePassword(
+    userId: string, 
+    currentPassword: string, 
+    newPassword: string
+  ): Promise<boolean> {
     try {
-      const isValid = await this.verifyPassword(userId, currentPassword);
-      if (!isValid) {
+      if (!Types.ObjectId.isValid(userId)) {
+        throw new Error('Invalid user ID');
+      }
+
+      const user = await User.findById(userId).select('+password');
+      if (!user) {
+        throw new Error('User not found');
+      }
+
+      const isMatch = await bcrypt.compare(currentPassword, user.password);
+      if (!isMatch) {
         throw new Error('Current password is incorrect');
       }
 
-      await this.updateUser(userId, {
-        password: newPassword,
-      });
-
+      user.password = newPassword; // Pre-save hook will hash the password
+      await user.save();
+      
       return true;
     } catch (error) {
       logger.error('Failed to change password:', error);
       throw error;
     }
-  },
-};
+  }
+
+  /**
+   * Update user profile
+   */
+  async updateProfile(
+    userId: string,
+    data: {
+      name?: string;
+      phone?: string;
+      avatar?: string;
+    }
+  ): Promise<IUser | null> {
+    try {
+      if (!Types.ObjectId.isValid(userId)) {
+        throw new Error('Invalid user ID');
+      }
+
+      const updatedUser = await User.findByIdAndUpdate(
+export const userService = new UserService();

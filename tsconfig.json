@@ -1,49 +1,26 @@
-
 {
   "compilerOptions": {
+    /* Base Options */
     "target": "ES2022",
-    "useDefineForClassFields": true,
-    "lib": ["ES2022", "DOM", "DOM.Iterable"],
-    "module": "ESNext",
-    "skipLibCheck": true,
-    "moduleResolution": "bundler",
-    "allowImportingTsExtensions": true,
-    "resolveJsonModule": true,
-    "isolatedModules": true,
-    "noEmit": true,
-    "jsx": "react-jsx",
+    "module": "NodeNext",
+    "moduleResolution": "NodeNext",
+    "esModuleInterop": true,
     "strict": true,
-    "noUnusedLocals": false,
-    "noUnusedParameters": false,
-    "noFallthroughCasesInSwitch": true,
+    "skipLibCheck": true,
+    "forceConsistentCasingInFileNames": true,
+    "resolveJsonModule": true,
+    "allowSyntheticDefaultImports": true,
+    "declaration": true,
+    "declarationMap": true,
+    "sourceMap": true,
+    "outDir": "./dist",
+    "rootDir": ".",
     "baseUrl": ".",
     "paths": {
-      "@/*": ["./client/src/*"],
-      "@/components/*": ["./client/src/components/*"],
-      "@/pages/*": ["./client/src/pages/*"],
-      "@/lib/*": ["./client/src/lib/*"],
-      "@/hooks/*": ["./client/src/hooks/*"],
-      "@/types/*": ["./client/src/types/*"],
-      "@/utils/*": ["./client/src/utils/*"],
-      "@/contexts/*": ["./client/src/contexts/*"],
       "@shared/*": ["./shared/*"],
       "@server/*": ["./server/*"]
     },
-    "esModuleInterop": true,
-    "allowSyntheticDefaultImports": true,
-    "forceConsistentCasingInFileNames": true,
-    "declaration": true,
-    "declarationMap": true,
-    "outDir": "./dist",
     "types": ["node"]
   },
-  "include": [
-    "client/src/**/*",
-    "server/**/*", 
-    "shared/**/*",
-    "mobile/src/**/*",
-    "delivery-app/src/**/*",
-    "vite.config.ts"
-  ],
-  "exclude": ["node_modules", "dist", "build"]
+  "exclude": ["node_modules", "dist"]
 }
