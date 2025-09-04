@@ -6,13 +6,16 @@ import { Provider as StoreProvider } from 'react-redux';
 import { PersistGate } from 'redux-persist/integration/react';
 import { NavigationContainer } from '@react-navigation/native';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
-
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
+import { AuthProvider } from './src/contexts/AuthContext';
+import { Slot } from 'expo-router';
 import useCachedResources from './src/hooks/useCachedResources';
 import Navigation from './src/navigation';
 import { store, persistor } from './src/store';
-import { AuthProvider } from './src/contexts/AuthContext';
 import { NotificationProvider } from './src/contexts/NotificationContext';
 import theme from './src/theme';
+
+const queryClient = new QueryClient();
 
 const App = () => {
   const isLoadingComplete = useCachedResources();

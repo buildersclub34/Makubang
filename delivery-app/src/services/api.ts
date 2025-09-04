@@ -1,4 +1,3 @@
-
 import axios from 'axios';
 
 const API_BASE_URL = 'http://0.0.0.0:5000/api';
@@ -42,17 +41,17 @@ export const authAPI = {
     const response = await api.post('/auth/login', { email, password });
     return response.data;
   },
-  
+
   register: async (userData: any) => {
     const response = await api.post('/auth/register', userData);
     return response.data;
   },
-  
+
   getProfile: async () => {
     const response = await api.get('/users/profile');
     return response.data;
   },
-  
+
   updateProfile: async (profileData: any) => {
     const response = await api.put('/users/profile', profileData);
     return response.data;
@@ -60,50 +59,53 @@ export const authAPI = {
 };
 
 export const deliveryAPI = {
-  registerPartner: async (partnerData: any) => {
-    const response = await api.post('/delivery/register', partnerData);
-    return response.data;
-  },
-  
-  updateAvailability: async (isAvailable: boolean, currentLocation: any) => {
-    const response = await api.post('/delivery/availability', {
-      isAvailable,
-      currentLocation,
-    });
-    return response.data;
-  },
-  
-  getAvailableOrders: async () => {
-    const response = await api.get('/delivery/orders');
-    return response.data;
-  },
-  
-  acceptOrder: async (orderId: string) => {
-    const response = await api.post(`/delivery/orders/${orderId}/accept`);
-    return response.data;
-  },
-  
-  updateOrderStatus: async (orderId: string, status: string, location?: any) => {
-    const response = await api.put(`/delivery/orders/${orderId}/status`, {
-      status,
-      location,
-    });
-    return response.data;
-  },
-  
-  getOrderHistory: async (page = 1, limit = 20) => {
-    const response = await api.get(`/delivery/orders/history?page=${page}&limit=${limit}`);
-    return response.data;
-  },
-  
-  getEarnings: async (startDate?: string, endDate?: string) => {
-    const params = new URLSearchParams();
-    if (startDate) params.append('startDate', startDate);
-    if (endDate) params.append('endDate', endDate);
-    
-    const response = await api.get(`/delivery/earnings?${params.toString()}`);
-    return response.data;
-  },
+  getDashboardStats: async () => ({
+    todaysEarnings: 0,
+    totalOrders: 0,
+    activeOrders: 0,
+    rating: 0,
+    completionRate: 0,
+    avgDeliveryTime: 0,
+    isOnline: false,
+  }),
+
+  getActiveOrders: async () => [],
+
+  getProfile: async () => ({
+    name: '',
+    email: '',
+    phone: '',
+    avatar: '',
+    vehicleType: '',
+    vehicleNumber: '',
+    licenseNumber: '',
+    rating: 0,
+    totalDeliveries: 0,
+    verificationStatus: 'pending',
+    isAvailable: false,
+    bankDetails: null,
+  }),
+
+  updateProfile: async (profile: any) => profile,
+
+  getWallet: async () => ({
+    currentBalance: 0,
+    totalEarnings: 0,
+    totalWithdrawals: 0,
+  }),
+
+  getEarningsSummary: async (period: string) => ({
+    currentBalance: 0,
+    totalEarnings: 0,
+    totalDeliveries: 0,
+    avgEarningsPerDelivery: 0,
+  }),
+
+  getTransactions: async () => [],
+
+  getWithdrawalHistory: async () => [],
+
+  requestWithdrawal: async (amount: number, bankDetails: any) => ({}),
 };
 
 export const walletAPI = {
@@ -111,12 +113,12 @@ export const walletAPI = {
     const response = await api.get('/wallet/balance');
     return response.data;
   },
-  
+
   getTransactions: async (page = 1, limit = 20) => {
     const response = await api.get(`/wallet/transactions?page=${page}&limit=${limit}`);
     return response.data;
   },
-  
+
   withdraw: async (amount: number, bankDetails: any) => {
     const response = await api.post('/wallet/withdraw', {
       amount,
@@ -124,7 +126,7 @@ export const walletAPI = {
     });
     return response.data;
   },
-  
+
   addMoney: async (amount: number, paymentMethodId: string) => {
     const response = await api.post('/wallet/add-money', {
       amount,
@@ -139,12 +141,12 @@ export const notificationAPI = {
     const response = await api.get(`/notifications?page=${page}&limit=${limit}`);
     return response.data;
   },
-  
+
   markAsRead: async (notificationId: string) => {
     const response = await api.put(`/notifications/${notificationId}/read`);
     return response.data;
   },
-  
+
   updatePushToken: async (token: string) => {
     const response = await api.post('/notifications/push-token', { token });
     return response.data;
@@ -156,7 +158,7 @@ export const trackingAPI = {
     const response = await api.get(`/orders/${orderId}/location`);
     return response.data;
   },
-  
+
   updateLocation: async (orderId: string, location: any) => {
     const response = await api.post(`/orders/${orderId}/location`, { location });
     return response.data;

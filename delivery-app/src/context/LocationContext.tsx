@@ -1,4 +1,3 @@
-
 import React, { createContext, useContext, useState, useEffect, ReactNode } from 'react';
 import Geolocation from '@react-native-community/geolocation';
 import { Platform, PermissionsAndroid, Alert } from 'react-native';
@@ -109,10 +108,10 @@ export const LocationProvider: React.FC<LocationProviderProps> = ({ children }) 
         console.error('Get location error:', error);
         Alert.alert('Error', 'Failed to get current location');
       },
-      { 
-        enableHighAccuracy: true, 
-        timeout: 15000, 
-        maximumAge: 10000 
+      {
+        enableHighAccuracy: true,
+        timeout: 15000,
+        maximumAge: 10000
       }
     );
   };

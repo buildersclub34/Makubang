@@ -1,88 +1,28 @@
-import React, { useState, useEffect } from 'react';
-import { StyleSheet, Text, View, SafeAreaView, StatusBar, Alert } from 'react-native';
+
+import React from 'react';
+import { View, StyleSheet, ActivityIndicator } from 'react-native';
 import { NavigationContainer } from '@react-navigation/native';
+import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
-import { createStackNavigator } from '@react-navigation/stack';
-import Icon from 'react-native-vector-icons/MaterialIcons';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
+import { SafeAreaProvider } from 'react-native-safe-area-context';
+import Icon from 'react-native-vector-icons/MaterialIcons';
 
-// Screens
-import LoginScreen from './src/screens/LoginScreen';
-import DashboardScreen from './src/screens/DashboardScreen';
-import OrdersScreen from './src/screens/OrdersScreen';
-import OrderDetailScreen from './src/screens/OrderDetailScreen';
-import ProfileScreen from './src/screens/ProfileScreen';
-import EarningsScreen from './src/screens/EarningsScreen';
-import TrackingScreen from './src/screens/TrackingScreen';
-// Added for delivery partner app
-import LiveMapScreen from './src/screens/LiveMapScreen';
-import WalletScreen from './src/screens/WalletScreen';
-import OrderHistoryScreen from './src/screens/OrderHistoryScreen';
-
-
-// Context
 import { AuthProvider, useAuth } from './src/context/AuthContext';
 import { LocationProvider } from './src/context/LocationContext';
 
+// Import screens
+import LoginScreen from './src/screens/LoginScreen';
+import DashboardScreen from './src/screens/DashboardScreen';
+import LiveMapScreen from './src/screens/LiveMapScreen';
+import WalletScreen from './src/screens/WalletScreen';
+import OrderHistoryScreen from './src/screens/OrderHistoryScreen';
+import ProfileScreen from './src/screens/ProfileScreen';
+
+const Stack = createNativeStackNavigator();
 const Tab = createBottomTabNavigator();
-const Stack = createStackNavigator();
 const queryClient = new QueryClient();
 
-function OrdersStack() {
-  return (
-    <Stack.Navigator>
-      <Stack.Screen 
-        name="OrdersList" 
-        component={OrdersScreen} 
-        options={{ title: 'Available Orders' }}
-      />
-      <Stack.Screen 
-        name="OrderDetail" 
-        component={OrderDetailScreen} 
-        options={{ title: 'Order Details' }}
-      />
-      <Stack.Screen 
-        name="Tracking" 
-        component={TrackingScreen} 
-        options={{ title: 'Live Tracking' }}
-      />
-    </Stack.Navigator>
-  );
-}
-
-function MainTabs() {
-  return (
-    <Tab.Navigator
-      screenOptions={({ route }) => ({
-        tabBarIcon: ({ focused, color, size }) => {
-          let iconName;
-
-          if (route.name === 'Dashboard') {
-            iconName = 'dashboard';
-          } else if (route.name === 'Orders') {
-            iconName = 'local-shipping';
-          } else if (route.name === 'Earnings') {
-            iconName = 'account-balance-wallet';
-          } else if (route.name === 'Profile') {
-            iconName = 'person';
-          }
-
-          return <Icon name={iconName} size={size} color={color} />;
-        },
-        tabBarActiveTintColor: '#FF6B35',
-        tabBarInactiveTintColor: 'gray',
-        headerShown: false,
-      })}
-    >
-      <Tab.Screen name="Dashboard" component={DashboardScreen} />
-      <Tab.Screen name="Orders" component={OrdersStack} />
-      <Tab.Screen name="Earnings" component={EarningsScreen} />
-      <Tab.Screen name="Profile" component={ProfileScreen} />
-    </Tab.Navigator>
-  );
-}
-
-// Updated for Delivery Partner App Navigation
 function DeliveryPartnerTabs() {
   return (
     <Tab.Navigator
@@ -112,7 +52,7 @@ function DeliveryPartnerTabs() {
 
           return <Icon name={iconName} size={size} color={color} />;
         },
-        tabBarActiveTintColor: '#4CAF50', // Green for delivery partners
+        tabBarActiveTintColor: '#4CAF50',
         tabBarInactiveTintColor: '#757575',
         tabBarStyle: {
           backgroundColor: '#fff',
@@ -134,14 +74,13 @@ function DeliveryPartnerTabs() {
   );
 }
 
-
 function AppNavigator() {
-  const { isAuthenticated, isLoading, userRole } = useAuth(); // Assuming userRole is available
+  const { isAuthenticated, isLoading } = useAuth();
 
   if (isLoading) {
     return (
       <View style={styles.loadingContainer}>
-        <Text>Loading...</Text>
+        <ActivityIndicator size="large" color="#4CAF50" />
       </View>
     );
   }
@@ -150,11 +89,7 @@ function AppNavigator() {
     <NavigationContainer>
       <Stack.Navigator screenOptions={{ headerShown: false }}>
         {isAuthenticated ? (
-          userRole === 'delivery_partner' ? (
-            <Stack.Screen name="DeliveryPartnerTabs" component={DeliveryPartnerTabs} />
-          ) : (
-            <Stack.Screen name="Main" component={MainTabs} />
-          )
+          <Stack.Screen name="DeliveryPartnerTabs" component={DeliveryPartnerTabs} />
         ) : (
           <Stack.Screen name="Login" component={LoginScreen} />
         )}
@@ -166,26 +101,22 @@ function AppNavigator() {
 export default function App() {
   return (
     <QueryClientProvider client={queryClient}>
-      <AuthProvider>
-        <LocationProvider>
-          <SafeAreaView style={styles.container}>
-            <StatusBar barStyle="dark-content" backgroundColor="#fff" />
+      <SafeAreaProvider>
+        <AuthProvider>
+          <LocationProvider>
             <AppNavigator />
-          </SafeAreaView>
-        </LocationProvider>
-      </AuthProvider>
+          </LocationProvider>
+        </AuthProvider>
+      </SafeAreaProvider>
     </QueryClientProvider>
   );
 }
 
 const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: '#fff',
-  },
   loadingContainer: {
     flex: 1,
     justifyContent: 'center',
     alignItems: 'center',
+    backgroundColor: '#1A1A1A',
   },
 });
