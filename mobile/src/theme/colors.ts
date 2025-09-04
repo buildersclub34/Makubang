@@ -4,16 +4,13 @@ export const colors = {
   secondary: '#4ECDC4',
   background: '#FFFFFF',
   surface: '#F8F9FA',
-  text: '#2C3E50',
-  textSecondary: '#7F8C8D',
-  border: '#E9ECEF',
-  error: '#E74C3C',
-  warning: '#F39C12',
-  success: '#27AE60',
-  info: '#3498DB',
-  accent: '#9B59B6',
-  disabled: '#BDC3C7',
-  placeholder: '#95A5A6',
+  text: '#212529',
+  textSecondary: '#6C757D',
+  border: '#DEE2E6',
+  success: '#28A745',
+  warning: '#FFC107',
+  error: '#DC3545',
+  info: '#17A2B8'
 };
 
 export default colors;

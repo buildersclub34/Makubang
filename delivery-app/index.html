@@ -1,0 +1,71 @@
+
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Makubang Delivery Partner</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        body {
+            font-family: system-ui, -apple-system, sans-serif;
+            background-color: #1A1A1A;
+            color: white;
+        }
+    </style>
+</head>
+<body>
+    <div id="root">
+        <div style="display: flex; flex-direction: column; min-height: 100vh; padding: 20px;">
+            <h1 style="color: #4CAF50; margin-bottom: 30px;">Makubang Delivery Partner</h1>
+            
+            <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 20px; flex: 1;">
+                <div style="background: #2A2A2A; border-radius: 12px; padding: 20px;">
+                    <h2 style="color: #4CAF50; margin-bottom: 15px;">Dashboard</h2>
+                    <p style="color: #ccc; margin-bottom: 10px;">Today's Earnings: ₹850</p>
+                    <p style="color: #ccc; margin-bottom: 10px;">Orders Completed: 12</p>
+                    <p style="color: #ccc;">Status: Online</p>
+                </div>
+                
+                <div style="background: #2A2A2A; border-radius: 12px; padding: 20px;">
+                    <h2 style="color: #4CAF50; margin-bottom: 15px;">Active Orders</h2>
+                    <div style="background: #3A3A3A; border-radius: 8px; padding: 15px; margin-bottom: 10px;">
+                        <p style="color: white; font-weight: bold;">Order #1234</p>
+                        <p style="color: #ccc; font-size: 14px;">Pizza Palace → MG Road</p>
+                        <p style="color: #4CAF50; font-size: 14px;">₹80 • 15 mins</p>
+                    </div>
+                    <div style="background: #3A3A3A; border-radius: 8px; padding: 15px;">
+                        <p style="color: white; font-weight: bold;">Order #1235</p>
+                        <p style="color: #ccc; font-size: 14px;">Burger King → Brigade Road</p>
+                        <p style="color: #4CAF50; font-size: 14px;">₹65 • 20 mins</p>
+                    </div>
+                </div>
+                
+                <div style="background: #2A2A2A; border-radius: 12px; padding: 20px;">
+                    <h2 style="color: #4CAF50; margin-bottom: 15px;">Quick Actions</h2>
+                    <button style="width: 100%; background: #4CAF50; color: white; border: none; border-radius: 8px; padding: 12px; margin-bottom: 10px; cursor: pointer;">
+                        Go Online
+                    </button>
+                    <button style="width: 100%; background: #FF5722; color: white; border: none; border-radius: 8px; padding: 12px; margin-bottom: 10px; cursor: pointer;">
+                        Emergency Break
+                    </button>
+                    <button style="width: 100%; background: #2196F3; color: white; border: none; border-radius: 8px; padding: 12px; cursor: pointer;">
+                        View Map
+                    </button>
+                </div>
+            </div>
+            
+            <nav style="display: flex; justify-content: space-around; margin-top: 30px; padding: 15px 0; border-top: 1px solid #444;">
+                <a href="#dashboard" style="color: #4CAF50; text-decoration: none;">Dashboard</a>
+                <a href="#orders" style="color: #ccc; text-decoration: none;">Orders</a>
+                <a href="#earnings" style="color: #ccc; text-decoration: none;">Earnings</a>
+                <a href="#profile" style="color: #ccc; text-decoration: none;">Profile</a>
+            </nav>
+        </div>
+    </div>
+</body>
+</html>

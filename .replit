@@ -6,7 +6,7 @@ expertMode = true
 channel = "stable-25_05"
 
 [workflows]
-runButton = "Full Stack Development"
+runButton = "Web Applications"
 
 [[workflows.workflow]]
 name = "Project"
@@ -95,6 +95,23 @@ mode = "sequential"
 [[workflows.workflow.tasks]]
 task = "shell.exec"
 args = "NODE_ENV=development tsx server/index.ts"
+
+[[workflows.workflow]]
+name = "Web Applications"
+author = 47231244
+mode = "parallel"
+
+[[workflows.workflow.tasks]]
+task = "shell.exec"
+args = "NODE_ENV=development tsx server/index.ts"
+
+[[workflows.workflow.tasks]]
+task = "shell.exec"
+args = "cd mobile && python3 -m http.server 3001"
+
+[[workflows.workflow.tasks]]
+task = "shell.exec"
+args = "cd delivery-app && python3 -m http.server 3002"
 
 [[ports]]
 localPort = 3001

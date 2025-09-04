@@ -1,63 +1,61 @@
 
-import { Tabs } from 'expo-router';
 import React from 'react';
-import { Platform } from 'react-native';
-import { Ionicons } from '@expo/vector-icons';
-import theme from '../../src/theme';
+import { theme } from '../../src/theme';
 
-export default function TabLayout() {
+interface TabLayoutProps {
+  children: React.ReactNode;
+}
+
+export default function TabLayout({ children }: TabLayoutProps) {
   return (
-    <Tabs
-      screenOptions={{
-        tabBarActiveTintColor: theme.colors.primary,
-        tabBarInactiveTintColor: theme.colors.textSecondary,
-        headerShown: false,
-        tabBarStyle: Platform.select({
-          ios: {
-            position: 'absolute',
-            backgroundColor: theme.colors.background,
-          },
-          default: {
-            backgroundColor: theme.colors.background,
-          },
-        }),
+    <div style={{ display: 'flex', flexDirection: 'column', minHeight: '100vh' }}>
+      <main style={{ flex: 1, padding: theme.spacing.md }}>
+        {children}
+      </main>
+      
+      <nav style={{
+        display: 'flex',
+        justifyContent: 'space-around',
+        alignItems: 'center',
+        padding: theme.spacing.md,
+        backgroundColor: theme.colors.surface,
+        borderTop: `1px solid ${theme.colors.border}`,
+        position: 'sticky',
+        bottom: 0
       }}>
-      <Tabs.Screen
-        name="feed"
-        options={{
-          title: 'Feed',
-          tabBarIcon: ({ color, focused }) => (
-            <Ionicons name={focused ? 'home' : 'home-outline'} size={24} color={color} />
-          ),
-        }}
-      />
-      <Tabs.Screen
-        name="discover"
-        options={{
-          title: 'Discover',
-          tabBarIcon: ({ color, focused }) => (
-            <Ionicons name={focused ? 'search' : 'search-outline'} size={24} color={color} />
-          ),
-        }}
-      />
-      <Tabs.Screen
-        name="orders"
-        options={{
-          title: 'Orders',
-          tabBarIcon: ({ color, focused }) => (
-            <Ionicons name={focused ? 'receipt' : 'receipt-outline'} size={24} color={color} />
-          ),
-        }}
-      />
-      <Tabs.Screen
-        name="profile"
-        options={{
-          title: 'Profile',
-          tabBarIcon: ({ color, focused }) => (
-            <Ionicons name={focused ? 'person' : 'person-outline'} size={24} color={color} />
-          ),
-        }}
-      />
-    </Tabs>
+        <a href="/discover" style={{
+          textDecoration: 'none',
+          color: theme.colors.text,
+          padding: theme.spacing.sm,
+          borderRadius: theme.borderRadius.md
+        }}>
+          Discover
+        </a>
+        <a href="/feed" style={{
+          textDecoration: 'none',
+          color: theme.colors.text,
+          padding: theme.spacing.sm,
+          borderRadius: theme.borderRadius.md
+        }}>
+          Feed
+        </a>
+        <a href="/orders" style={{
+          textDecoration: 'none',
+          color: theme.colors.text,
+          padding: theme.spacing.sm,
+          borderRadius: theme.borderRadius.md
+        }}>
+          Orders
+        </a>
+        <a href="/profile" style={{
+          textDecoration: 'none',
+          color: theme.colors.text,
+          padding: theme.spacing.sm,
+          borderRadius: theme.borderRadius.md
+        }}>
+          Profile
+        </a>
+      </nav>
+    </div>
   );
 }
