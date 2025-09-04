@@ -1,5 +1,5 @@
 import nodemailer from 'nodemailer';
-import { logger } from '../utils/logger';
+import { logger } from '../utils/logger.js';
 
 interface SendEmailOptions {
   to: string;
@@ -14,7 +14,7 @@ class EmailService {
 
   constructor() {
     this.from = process.env.EMAIL_FROM || 'noreply@makubang.com';
-    
+
     this.transporter = nodemailer.createTransport({
       host: process.env.EMAIL_SERVER_HOST,
       port: parseInt(process.env.EMAIL_SERVER_PORT || '587'),
@@ -41,7 +41,7 @@ class EmailService {
 
   public async sendVerificationEmail(email: string, token: string, name: string) {
     const verificationUrl = `${process.env.NEXT_PUBLIC_APP_URL}/auth/verify-email?token=${token}`;
-    
+
     const html = `
       <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
         <h2>Verify Your Email Address</h2>
@@ -70,7 +70,7 @@ class EmailService {
 
   public async sendPasswordResetEmail(email: string, token: string, name: string) {
     const resetUrl = `${process.env.NEXT_PUBLIC_APP_URL}/auth/reset-password?token=${token}`;
-    
+
     const html = `
       <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
         <h2>Reset Your Password</h2>
@@ -123,7 +123,7 @@ class EmailService {
 
 export const emailService = new EmailService();
 import nodemailer from 'nodemailer';
-import { logger } from '../utils/logger';
+import { logger } from '../utils/logger.js';
 
 export interface EmailData {
   to: string;
@@ -150,7 +150,7 @@ export class EmailService {
   async send(emailData: EmailData): Promise<boolean> {
     try {
       const html = this.renderTemplate(emailData.template, emailData.data);
-      
+
       const mailOptions = {
         from: process.env.SMTP_FROM || process.env.SMTP_USER,
         to: emailData.to,
@@ -170,7 +170,7 @@ export class EmailService {
   private renderTemplate(template: string, data: Record<string, any>): string {
     // Simple template rendering - replace {{variable}} with actual values
     let html = this.getTemplate(template);
-    
+
     Object.keys(data).forEach(key => {
       const regex = new RegExp(`{{${key}}}`, 'g');
       html = html.replace(regex, data[key] || '');

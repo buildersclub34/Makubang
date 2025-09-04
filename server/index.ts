@@ -18,9 +18,6 @@ const __dirname = path.dirname(__filename);
 // import orderRoutes from './routes/order.routes'; // This import seems to be removed in the provided changes, assuming it's handled elsewhere or not needed for this specific fix.
 import { errorHandler } from './middleware/error-handler.js';
 import { requestLogger } from './middleware/request-logger.js';
-// import { setupWebSocket } from './websocket'; // This import seems to be removed in the provided changes, assuming it's handled elsewhere or not needed for this specific fix.
-// import { NotificationService } from './services/notification-service'; // This import seems to be removed in the provided changes, assuming it's handled elsewhere or not needed for this specific fix.
-// import { OrderTrackingService } from './services/order-tracking'; // This import seems to be removed in the provided changes, assuming it's handled elsewhere or not needed for this specific fix.
 import WebSocketService from './lib/websocket/server.js';
 
 const app = express();
