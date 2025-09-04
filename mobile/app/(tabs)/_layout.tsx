@@ -1,5 +1,3 @@
-
-import React from 'react';
 import { Tabs } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 
@@ -8,11 +6,11 @@ export default function TabLayout() {
     <Tabs
       screenOptions={{
         tabBarActiveTintColor: '#00D4FF',
-        tabBarInactiveTintColor: '#666666',
+        tabBarInactiveTintColor: '#666',
         tabBarStyle: {
           backgroundColor: '#0D0D0D',
           borderTopWidth: 2,
-          borderTopColor: '#00D4FF',
+          borderTopColor: '#333',
           height: 60,
           paddingBottom: 8,
           paddingTop: 8,
@@ -46,7 +44,7 @@ export default function TabLayout() {
         options={{
           title: 'Discover',
           tabBarIcon: ({ color, size }) => (
-            <Ionicons name="compass" size={size} color={color} />
+            <Ionicons name="search" size={size} color={color} />
           ),
         }}
       />
@@ -64,7 +62,7 @@ export default function TabLayout() {
         options={{
           title: 'Profile',
           tabBarIcon: ({ color, size }) => (
-            <Ionicons name="person-circle" size={size} color={color} />
+            <Ionicons name="person" size={size} color={color} />
           ),
         }}
       />
