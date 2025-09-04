@@ -61,6 +61,15 @@ task = "shell.exec"
 args = "cd mobile && npx @expo/cli start --port 3001"
 waitForPort = 3001
 
+[[workflows.workflow]]
+name = "Mobile App Fixed"
+author = 47231244
+mode = "sequential"
+
+[[workflows.workflow.tasks]]
+task = "shell.exec"
+args = "cd mobile && npm install && npx @expo/cli start --port 3001 --clear"
+
 [[ports]]
 localPort = 3001
 externalPort = 3001

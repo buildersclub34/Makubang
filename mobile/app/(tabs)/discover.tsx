@@ -1,220 +1,312 @@
-import React, { useState } from 'react';
+
+import React, { useState, useEffect } from 'react';
 import {
   View,
   Text,
-  StyleSheet,
   ScrollView,
   TouchableOpacity,
-  TextInput,
   Image,
+  TextInput,
+  StyleSheet,
+  Dimensions,
 } from 'react-native';
-import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
 import { theme } from '../../src/theme';
 
+const { width } = Dimensions.get('window');
+
+interface Restaurant {
+  id: string;
+  name: string;
+  image: string;
+  rating: number;
+  deliveryTime: string;
+  cuisine: string;
+  distance: string;
+  promoted?: boolean;
+}
+
+interface FoodCategory {
+  id: string;
+  name: string;
+  icon: string;
+  color: string;
+}
+
 export default function DiscoverScreen() {
   const [searchQuery, setSearchQuery] = useState('');
+  const [selectedCategory, setSelectedCategory] = useState('all');
+  const [restaurants, setRestaurants] = useState<Restaurant[]>([]);
+  const [categories, setCategories] = useState<FoodCategory[]>([]);
 
-  const categories = [
-    { id: '1', name: 'Indian', icon: '🍛', color: '#FF6B35' },
-    { id: '2', name: 'Chinese', icon: '🥢', color: '#00D4FF' },
-    { id: '3', name: 'Italian', icon: '🍕', color: '#FF0080' },
-    { id: '4', name: 'Fast Food', icon: '🍔', color: '#00FF88' },
-  ];
+  useEffect(() => {
+    // Mock data - replace with API calls
+    setCategories([
+      { id: 'all', name: 'All', icon: 'restaurant', color: theme.colors.primary },
+      { id: 'indian', name: 'Indian', icon: 'leaf', color: '#FF9500' },
+      { id: 'chinese', name: 'Chinese', icon: 'restaurant', color: '#FF3B30' },
+      { id: 'italian', name: 'Italian', icon: 'pizza', color: '#34C759' },
+      { id: 'fastfood', name: 'Fast Food', icon: 'fast-food', color: '#007AFF' },
+    ]);
 
-  const popularRestaurants = [
-    { id: '1', name: 'Delhi Darbar', cuisine: 'Indian', rating: 4.5, image: 'https://via.placeholder.com/150x100?text=Restaurant' },
-    { id: '2', name: 'Pizza Corner', cuisine: 'Italian', rating: 4.2, image: 'https://via.placeholder.com/150x100?text=Pizza' },
-    { id: '3', name: 'Burger King', cuisine: 'Fast Food', rating: 4.0, image: 'https://via.placeholder.com/150x100?text=Burger' },
-  ];
+    setRestaurants([
+      {
+        id: '1',
+        name: 'Spice Garden',
+        image: 'https://via.placeholder.com/300x200',
+        rating: 4.5,
+        deliveryTime: '25-35 min',
+        cuisine: 'Indian',
+        distance: '1.2 km',
+        promoted: true,
+      },
+      {
+        id: '2',
+        name: 'Dragon Palace',
+        image: 'https://via.placeholder.com/300x200',
+        rating: 4.3,
+        deliveryTime: '30-40 min',
+        cuisine: 'Chinese',
+        distance: '2.1 km',
+      },
+      {
+        id: '3',
+        name: 'Pizza Corner',
+        image: 'https://via.placeholder.com/300x200',
+        rating: 4.7,
+        deliveryTime: '20-30 min',
+        cuisine: 'Italian',
+        distance: '0.8 km',
+      },
+    ]);
+  }, []);
+
+  const filteredRestaurants = restaurants.filter(restaurant => {
+    const matchesSearch = restaurant.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
+                         restaurant.cuisine.toLowerCase().includes(searchQuery.toLowerCase());
+    const matchesCategory = selectedCategory === 'all' || 
+                           restaurant.cuisine.toLowerCase() === selectedCategory;
+    return matchesSearch && matchesCategory;
+  });
+
+  const renderRestaurantCard = (restaurant: Restaurant) => (
+    <TouchableOpacity key={restaurant.id} style={styles.restaurantCard}>
+      {restaurant.promoted && (
+        <View style={styles.promotedBadge}>
+          <Text style={styles.promotedText}>PROMOTED</Text>
+        </View>
+      )}
+      <Image source={{ uri: restaurant.image }} style={styles.restaurantImage} />
+      <View style={styles.restaurantInfo}>
+        <Text style={styles.restaurantName}>{restaurant.name}</Text>
+        <Text style={styles.restaurantCuisine}>{restaurant.cuisine}</Text>
+        <View style={styles.restaurantMeta}>
+          <View style={styles.ratingContainer}>
+            <Ionicons name="star" size={14} color="#FFD700" />
+            <Text style={styles.rating}>{restaurant.rating}</Text>
+          </View>
+          <Text style={styles.metaText}>• {restaurant.deliveryTime}</Text>
+          <Text style={styles.metaText}>• {restaurant.distance}</Text>
+        </View>
+      </View>
+    </TouchableOpacity>
+  );
 
   return (
-    <LinearGradient
-      colors={[theme.colors.background.primary, theme.colors.background.secondary]}
-      style={styles.container}
-    >
-      <ScrollView style={styles.scrollView} showsVerticalScrollIndicator={false}>
-        <View style={styles.header}>
-          <Text style={styles.headerTitle}>Discover</Text>
-          <Text style={styles.headerSubtitle}>Find amazing food around you</Text>
-        </View>
+    <View style={styles.container}>
+      {/* Header */}
+      <View style={styles.header}>
+        <Text style={styles.headerTitle}>Discover</Text>
+        <TouchableOpacity style={styles.filterButton}>
+          <Ionicons name="filter" size={24} color={theme.colors.text} />
+        </TouchableOpacity>
+      </View>
 
-        <View style={styles.searchContainer}>
-          <View style={styles.searchInputContainer}>
-            <Ionicons name="search" size={20} color={theme.colors.text.secondary} />
-            <TextInput
-              style={styles.searchInput}
-              placeholder="Search restaurants, dishes..."
-              placeholderTextColor={theme.colors.text.secondary}
-              value={searchQuery}
-              onChangeText={setSearchQuery}
-            />
-          </View>
-        </View>
+      {/* Search Bar */}
+      <View style={styles.searchContainer}>
+        <Ionicons name="search" size={20} color={theme.colors.textSecondary} style={styles.searchIcon} />
+        <TextInput
+          style={styles.searchInput}
+          placeholder="Search restaurants or cuisines..."
+          placeholderTextColor={theme.colors.placeholder}
+          value={searchQuery}
+          onChangeText={setSearchQuery}
+        />
+      </View>
 
-        <View style={styles.section}>
+      <ScrollView style={styles.content} showsVerticalScrollIndicator={false}>
+        {/* Categories */}
+        <View style={styles.categoriesContainer}>
           <Text style={styles.sectionTitle}>Categories</Text>
-          <ScrollView horizontal showsHorizontalScrollIndicator={false}>
-            <View style={styles.categoriesContainer}>
-              {categories.map((category) => (
-                <TouchableOpacity key={category.id} style={styles.categoryCard}>
-                  <LinearGradient
-                    colors={[category.color + '20', category.color + '10']}
-                    style={styles.categoryGradient}
-                  >
-                    <Text style={styles.categoryIcon}>{category.icon}</Text>
-                    <Text style={styles.categoryName}>{category.name}</Text>
-                  </LinearGradient>
-                </TouchableOpacity>
-              ))}
-            </View>
+          <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.categoriesScroll}>
+            {categories.map((category) => (
+              <TouchableOpacity
+                key={category.id}
+                style={[
+                  styles.categoryCard,
+                  { backgroundColor: selectedCategory === category.id ? category.color : theme.colors.surface }
+                ]}
+                onPress={() => setSelectedCategory(category.id)}
+              >
+                <Ionicons
+                  name={category.icon as any}
+                  size={24}
+                  color={selectedCategory === category.id ? '#FFFFFF' : category.color}
+                />
+                <Text
+                  style={[
+                    styles.categoryName,
+                    { color: selectedCategory === category.id ? '#FFFFFF' : theme.colors.text }
+                  ]}
+                >
+                  {category.name}
+                </Text>
+              </TouchableOpacity>
+            ))}
           </ScrollView>
         </View>
 
-        <View style={styles.section}>
-          <Text style={styles.sectionTitle}>Popular Restaurants</Text>
-          {popularRestaurants.map((restaurant) => (
-            <TouchableOpacity key={restaurant.id} style={styles.restaurantCard}>
-              <LinearGradient
-                colors={['rgba(0,255,136,0.1)', 'rgba(255,0,128,0.1)']}
-                style={styles.restaurantGradient}
-              >
-                <Image source={{ uri: restaurant.image }} style={styles.restaurantImage} />
-                <View style={styles.restaurantInfo}>
-                  <Text style={styles.restaurantName}>{restaurant.name}</Text>
-                  <Text style={styles.restaurantCuisine}>{restaurant.cuisine}</Text>
-                  <View style={styles.ratingContainer}>
-                    <Ionicons name="star" size={16} color="#FFD700" />
-                    <Text style={styles.ratingText}>{restaurant.rating}</Text>
-                  </View>
-                </View>
-              </LinearGradient>
-            </TouchableOpacity>
-          ))}
+        {/* Featured Restaurants */}
+        <View style={styles.restaurantsContainer}>
+          <Text style={styles.sectionTitle}>
+            {selectedCategory === 'all' ? 'Featured Restaurants' : `${categories.find(c => c.id === selectedCategory)?.name || ''} Restaurants`}
+          </Text>
+          {filteredRestaurants.map(renderRestaurantCard)}
         </View>
       </ScrollView>
-    </LinearGradient>
+    </View>
   );
 }
 
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-  },
-  scrollView: {
-    flex: 1,
+    backgroundColor: theme.colors.background,
   },
   header: {
-    padding: theme.spacing.lg,
+    flexDirection: 'row',
+    justifyContent: 'space-between',
     alignItems: 'center',
+    paddingHorizontal: theme.spacing.md,
+    paddingTop: theme.spacing.lg,
+    paddingBottom: theme.spacing.md,
   },
   headerTitle: {
-    fontSize: theme.typography.sizes.xxxl,
-    fontWeight: theme.typography.weights.bold,
-    color: theme.colors.text.primary,
-    textAlign: 'center',
+    fontSize: theme.fontSize.xxl,
+    fontWeight: theme.fontWeight.bold as any,
+    color: theme.colors.text,
   },
-  headerSubtitle: {
-    fontSize: theme.typography.sizes.md,
-    color: theme.colors.text.secondary,
-    marginTop: theme.spacing.sm,
+  filterButton: {
+    padding: theme.spacing.sm,
   },
   searchContainer: {
-    paddingHorizontal: theme.spacing.lg,
-    marginBottom: theme.spacing.lg,
-  },
-  searchInputContainer: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: theme.colors.surface.primary,
-    borderRadius: theme.borderRadius.lg,
+    marginHorizontal: theme.spacing.md,
+    marginBottom: theme.spacing.md,
+    backgroundColor: theme.colors.surface,
+    borderRadius: theme.borderRadius.md,
     paddingHorizontal: theme.spacing.md,
-    paddingVertical: theme.spacing.sm,
-    borderWidth: 1,
-    borderColor: theme.colors.border.primary,
+  },
+  searchIcon: {
+    marginRight: theme.spacing.sm,
   },
   searchInput: {
     flex: 1,
-    color: theme.colors.text.primary,
-    fontSize: theme.typography.sizes.md,
-    marginLeft: theme.spacing.sm,
+    paddingVertical: theme.spacing.md,
+    fontSize: theme.fontSize.md,
+    color: theme.colors.text,
   },
-  section: {
-    marginBottom: theme.spacing.xl,
-  },
-  sectionTitle: {
-    fontSize: theme.typography.sizes.xl,
-    fontWeight: theme.typography.weights.bold,
-    color: theme.colors.text.primary,
-    marginBottom: theme.spacing.md,
-    paddingHorizontal: theme.spacing.lg,
+  content: {
+    flex: 1,
   },
   categoriesContainer: {
-    flexDirection: 'row',
-    paddingHorizontal: theme.spacing.lg,
-    gap: theme.spacing.md,
+    marginBottom: theme.spacing.lg,
+  },
+  sectionTitle: {
+    fontSize: theme.fontSize.lg,
+    fontWeight: theme.fontWeight.semibold as any,
+    color: theme.colors.text,
+    marginHorizontal: theme.spacing.md,
+    marginBottom: theme.spacing.md,
+  },
+  categoriesScroll: {
+    paddingLeft: theme.spacing.md,
   },
   categoryCard: {
-    borderRadius: theme.borderRadius.lg,
-    overflow: 'hidden',
-  },
-  categoryGradient: {
-    width: 100,
-    height: 80,
-    justifyContent: 'center',
     alignItems: 'center',
-    borderWidth: 1,
-    borderColor: theme.colors.border.primary,
+    justifyContent: 'center',
+    paddingVertical: theme.spacing.md,
+    paddingHorizontal: theme.spacing.lg,
+    marginRight: theme.spacing.sm,
     borderRadius: theme.borderRadius.lg,
-  },
-  categoryIcon: {
-    fontSize: 24,
-    marginBottom: theme.spacing.sm,
+    minWidth: 80,
   },
   categoryName: {
-    fontSize: theme.typography.sizes.sm,
-    color: theme.colors.text.primary,
-    fontWeight: theme.typography.weights.medium,
+    fontSize: theme.fontSize.sm,
+    fontWeight: theme.fontWeight.medium as any,
+    marginTop: theme.spacing.xs,
+  },
+  restaurantsContainer: {
+    paddingHorizontal: theme.spacing.md,
   },
   restaurantCard: {
-    marginHorizontal: theme.spacing.lg,
+    backgroundColor: theme.colors.surface,
+    borderRadius: theme.borderRadius.lg,
     marginBottom: theme.spacing.md,
-    borderRadius: theme.borderRadius.lg,
     overflow: 'hidden',
+    ...theme.shadows.sm,
   },
-  restaurantGradient: {
-    flexDirection: 'row',
-    padding: theme.spacing.md,
-    borderWidth: 1,
-    borderColor: theme.colors.border.primary,
-    borderRadius: theme.borderRadius.lg,
+  promotedBadge: {
+    position: 'absolute',
+    top: theme.spacing.sm,
+    right: theme.spacing.sm,
+    backgroundColor: theme.colors.primary,
+    paddingHorizontal: theme.spacing.sm,
+    paddingVertical: theme.spacing.xs,
+    borderRadius: theme.borderRadius.sm,
+    zIndex: 1,
+  },
+  promotedText: {
+    color: '#FFFFFF',
+    fontSize: theme.fontSize.xs,
+    fontWeight: theme.fontWeight.bold as any,
   },
   restaurantImage: {
-    width: 80,
-    height: 60,
-    borderRadius: theme.borderRadius.md,
+    width: '100%',
+    height: 160,
+    resizeMode: 'cover',
   },
   restaurantInfo: {
-    flex: 1,
-    marginLeft: theme.spacing.md,
-    justifyContent: 'space-between',
+    padding: theme.spacing.md,
   },
   restaurantName: {
-    fontSize: theme.typography.sizes.lg,
-    fontWeight: theme.typography.weights.semibold,
-    color: theme.colors.text.primary,
+    fontSize: theme.fontSize.lg,
+    fontWeight: theme.fontWeight.semibold as any,
+    color: theme.colors.text,
+    marginBottom: theme.spacing.xs,
   },
   restaurantCuisine: {
-    fontSize: theme.typography.sizes.sm,
-    color: theme.colors.text.secondary,
+    fontSize: theme.fontSize.md,
+    color: theme.colors.textSecondary,
+    marginBottom: theme.spacing.sm,
+  },
+  restaurantMeta: {
+    flexDirection: 'row',
+    alignItems: 'center',
   },
   ratingContainer: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: theme.spacing.sm,
   },
-  ratingText: {
-    fontSize: theme.typography.sizes.sm,
-    color: theme.colors.text.primary,
+  rating: {
+    fontSize: theme.fontSize.sm,
+    color: theme.colors.text,
+    marginLeft: theme.spacing.xs,
+  },
+  metaText: {
+    fontSize: theme.fontSize.sm,
+    color: theme.colors.textSecondary,
+    marginLeft: theme.spacing.xs,
   },
 });

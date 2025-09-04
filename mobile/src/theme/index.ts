@@ -1,3 +1,4 @@
+
 import { colors } from './colors';
 
 export const theme = {
@@ -8,7 +9,7 @@ export const theme = {
     md: 16,
     lg: 24,
     xl: 32,
-    xxl: 40,
+    xxl: 48,
   },
   borderRadius: {
     sm: 4,
@@ -17,31 +18,46 @@ export const theme = {
     xl: 16,
     full: 9999,
   },
-  typography: {
-    sizes: {
-      xs: 12,
-      sm: 14,
-      md: 16,
-      lg: 18,
-      xl: 20,
-      xxl: 24,
-      xxxl: 32,
-    },
-    weights: {
-      normal: '400',
-      medium: '500',
-      semibold: '600',
-      bold: '700',
-    },
+  fontSize: {
+    xs: 12,
+    sm: 14,
+    md: 16,
+    lg: 18,
+    xl: 20,
+    xxl: 24,
+    xxxl: 32,
+  },
+  fontWeight: {
+    normal: '400',
+    medium: '500',
+    semibold: '600',
+    bold: '700',
   },
   shadows: {
-    neon: {
-      green: '0 0 20px rgba(0, 255, 136, 0.5)',
-      pink: '0 0 20px rgba(255, 0, 128, 0.5)',
-      blue: '0 0 20px rgba(0, 128, 255, 0.5)',
+    sm: {
+      shadowColor: '#000',
+      shadowOffset: { width: 0, height: 1 },
+      shadowOpacity: 0.22,
+      shadowRadius: 2.22,
+      elevation: 3,
+    },
+    md: {
+      shadowColor: '#000',
+      shadowOffset: { width: 0, height: 2 },
+      shadowOpacity: 0.25,
+      shadowRadius: 3.84,
+      elevation: 5,
+    },
+    lg: {
+      shadowColor: '#000',
+      shadowOffset: { width: 0, height: 4 },
+      shadowOpacity: 0.30,
+      shadowRadius: 4.65,
+      elevation: 8,
     },
   },
 };
 
-export * from './colors';
+export type Theme = typeof theme;
+export { colors };
 export default theme;

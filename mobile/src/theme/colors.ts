@@ -1,41 +1,39 @@
 
 export const colors = {
-  // NeoPop inspired colors (CRED theme)
-  primary: {
-    50: '#0D0D0D',
-    100: '#1A1A1A',
-    200: '#2A2A2A',
-    300: '#3A3A3A',
-    400: '#4A4A4A',
-    500: '#5A5A5A',
-    600: '#6A6A6A',
-    700: '#7A7A7A',
-    800: '#8A8A8A',
-    900: '#9A9A9A',
-  },
-  neon: {
-    green: '#00FF88',
-    pink: '#FF0080',
-    blue: '#0080FF',
-    yellow: '#FFFF00',
-    purple: '#8000FF',
-  },
-  background: {
-    primary: '#0D0D0D',
-    secondary: '#1A1A1A',
-    tertiary: '#2A2A2A',
-  },
-  text: {
-    primary: '#FFFFFF',
-    secondary: '#CCCCCC',
-    tertiary: '#999999',
-  },
-  border: {
-    primary: '#333333',
-    neon: '#00FF88',
-  },
-  success: '#00FF88',
-  error: '#FF0080',
-  warning: '#FFFF00',
-  info: '#0080FF',
+  primary: '#FF6B35',
+  secondary: '#4ECDC4',
+  background: '#FFFFFF',
+  surface: '#F8F9FA',
+  text: '#2C3E50',
+  textSecondary: '#7F8C8D',
+  border: '#E9ECEF',
+  error: '#E74C3C',
+  warning: '#F39C12',
+  success: '#27AE60',
+  info: '#3498DB',
+  
+  // Additional theme colors
+  accent: '#9B59B6',
+  disabled: '#BDC3C7',
+  placeholder: '#95A5A6',
+  
+  // Dark mode variants
+  dark: {
+    primary: '#FF6B35',
+    secondary: '#4ECDC4',
+    background: '#1A1A1A',
+    surface: '#2C2C2C',
+    text: '#FFFFFF',
+    textSecondary: '#BDC3C7',
+    border: '#3A3A3A',
+    error: '#E74C3C',
+    warning: '#F39C12',
+    success: '#27AE60',
+    info: '#3498DB',
+    accent: '#9B59B6',
+    disabled: '#7F8C8D',
+    placeholder: '#95A5A6',
+  }
 };
+
+export type Colors = typeof colors;
