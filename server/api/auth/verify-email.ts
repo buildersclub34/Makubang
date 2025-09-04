@@ -1,8 +1,8 @@
 import { NextApiRequest, NextApiResponse } from 'next';
-import { db } from '@/db';
-import { users, emailVerifications } from '@shared/schema';
+import { db } from '../../db';
+import { users, emailVerifications } from '../../shared/schema';
 import { eq, and, gte } from 'drizzle-orm';
-import { verifyJwt } from '@/lib/jwt';
+import { verifyJwt } from '../../lib/jwt';
 
 export default async function handler(
   req: NextApiRequest,

@@ -17,10 +17,10 @@ declare module '@/app/api/auth/[...nextauth]/route' {
 
 declare module '@/server/db' {
   import { PostgresJsDatabase } from 'drizzle-orm/postgres-js';
-  import * as schema from '@shared/schema';
+  import * as schema from '../shared/schema';
   
   export const db: PostgresJsDatabase<typeof schema>;
-  export * from '@shared/schema';
+  export * from '../shared/schema';
 }
 
 declare module '@/server/lib/websocket/order-tracking' {

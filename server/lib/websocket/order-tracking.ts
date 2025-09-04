@@ -1,11 +1,11 @@
 import { Server as WebSocketServer, WebSocket } from 'ws';
-import { db } from '@/db';
+import { db } from '../db';
 import { sql } from 'drizzle-orm';
-import { orders, users, restaurants } from '@shared/schema';
+import { orders, users, restaurants } from '../../shared/schema';
 import type { InferSelectModel, SQL } from 'drizzle-orm';
 import { eq } from 'drizzle-orm';
 import { v4 as uuidv4 } from 'uuid';
-import type { OrderTrackingData } from '@shared/types/order';
+import type { OrderTrackingData } from '../../shared/types/order';
 
 type OrdersTable = typeof orders;
 type RestaurantsTable = typeof restaurants;

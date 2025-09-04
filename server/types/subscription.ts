@@ -1,4 +1,4 @@
-import { SubscriptionPlan as DbSubscriptionPlan } from '@shared/schema';
+import { SubscriptionPlan as DbSubscriptionPlan } from '../shared/schema';
 
 export interface SubscriptionPlan extends Omit<DbSubscriptionPlan, 'features' | 'price'> {
   features: string[];

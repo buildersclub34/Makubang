@@ -1,14 +1,14 @@
 import { Router } from 'express';
 import { body, param, query } from 'express-validator';
 import { NotificationController } from '../controllers/notificationController';
-import { isAuthenticated } from '../middleware/auth';
-import { validateRequest } from '../middleware/validateRequest.js';
+import { authenticate } from '../middleware/auth.middleware';
+import { validateRequest } from '../middleware/validateRequest';
 
 export const createNotificationRoutes = (notificationController: NotificationController) => {
   const router = Router();
 
   // Apply authentication middleware to all routes
-  router.use(isAuthenticated);
+  router.use(authenticate);
 
   // Get all notifications
   router.get(

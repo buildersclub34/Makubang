@@ -1,12 +1,12 @@
 import { NextResponse } from 'next/server';
 import { getServerSession } from 'next-auth/next';
-import { authOptions } from '@/app/api/auth/[...nextauth]/route';
-import { db } from '@/server/db';
-import { orders, orderItems, restaurants, users } from '@shared/schema';
+import { authOptions } from '../auth/[...nextauth]/route';
+import { db } from '../../db';
+import { orders, orderItems, restaurants, users } from '../../shared/schema';
 import { eq, and, inArray, desc } from 'drizzle-orm';
 import { v4 as uuidv4 } from 'uuid';
-import { getOrderTrackingService } from '@/server/lib/websocket/order-tracking';
-import { Order, OrderItem } from '@shared/types/order';
+import { getOrderTrackingService } from '../../lib/websocket/order-tracking';
+import { Order, OrderItem } from '../../shared/types/order';
 
 // Simple logger implementation
 const logger = {

@@ -4,7 +4,7 @@ import {
   subscriptions,
   subscriptionInvoices, 
   subscriptionUsage
-} from '@shared/schema';
+} from '../shared/schema';
 import { eq, and, gte, lte, sql } from 'drizzle-orm';
 import { v4 as uuidv4 } from 'uuid';
 import { addDays, addMonths, isAfter, isBefore, differenceInDays } from 'date-fns';

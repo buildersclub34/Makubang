@@ -1,7 +1,7 @@
 import { NextApiRequest, NextApiResponse } from 'next';
-import { verifyJwt, getTokenFromRequest } from '@/lib/jwt';
-import { db } from '@/db';
-import { users } from '@shared/schema';
+import { verifyJwt, getTokenFromRequest } from '../lib/jwt';
+import { db } from '../db';
+import { users } from '../../shared/schema';
 import { eq } from 'drizzle-orm';
 
 export interface AuthenticatedRequest extends NextApiRequest {

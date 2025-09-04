@@ -1,10 +1,10 @@
 import { NextResponse } from 'next/server';
-import { db } from '@/server/db';
-import { users, passwordResetTokens } from '@shared/schema';
+import { db } from '../../db';
+import { users, passwordResetTokens } from '../../../shared/schema';
 import { eq } from 'drizzle-orm';
 import { v4 as uuidv4 } from 'uuid';
-import { sendPasswordResetEmail } from '@/server/services/email-service';
-import { logger } from '@/server/utils/logger';
+import { sendPasswordResetEmail } from '../../services/email-service';
+import { logger } from '../../utils/logger';
 
 export async function POST(request: Request) {
   try {

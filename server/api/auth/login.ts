@@ -1,9 +1,9 @@
 import { NextApiRequest, NextApiResponse } from 'next';
-import { db } from '@/db';
-import { users } from '@shared/schema';
+import { db } from '../../db';
+import { users } from '../../shared/schema';
 import { eq } from 'drizzle-orm';
 import bcrypt from 'bcryptjs';
-import { signJwt } from '@/lib/jwt';
+import { signJwt } from '../../lib/jwt';
 
 export default async function handler(
   req: NextApiRequest,

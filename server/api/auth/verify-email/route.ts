@@ -1,9 +1,9 @@
 import { NextResponse } from 'next/server';
-import { db } from '@/server/db';
-import { users } from '@shared/schema';
+import { db } from '../../db';
+import { users } from '../../../shared/schema';
 import { eq } from 'drizzle-orm';
-import { validateVerificationToken } from '@/server/services/token-service';
-import { logger } from '@/server/utils/logger';
+import { validateVerificationToken } from '../../services/token-service';
+import { logger } from '../../utils/logger';
 
 export async function GET(request: Request) {
   const { searchParams } = new URL(request.url);

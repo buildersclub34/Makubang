@@ -1,10 +1,10 @@
 import { NextResponse } from 'next/server';
-import { db } from '@/server/db';
-import { users } from '@shared/schema';
+import { db } from '../../db';
+import { users } from '../../../shared/schema';
 import { eq } from 'drizzle-orm';
-import { createVerificationToken } from '@/server/services/token-service';
-import { emailService } from '@/server/services/email-service';
-import { logger } from '@/server/utils/logger';
+import { createVerificationToken } from '../../services/token-service';
+import { emailService } from '../../services/email-service';
+import { logger } from '../../utils/logger';
 
 export async function POST(request: Request) {
   try {

@@ -1,8 +1,8 @@
 import { NextResponse } from 'next/server';
 import { getServerSession } from 'next-auth';
-import { authOptions } from '@/server/auth';
-import { db } from '@/server/db';
-import { users } from '@shared/schema';
+import { authOptions } from '../auth';
+import { db } from '../db';
+import { users } from '../../shared/schema';
 import { eq } from 'drizzle-orm';
 
 export async function requireVerifiedEmail() {

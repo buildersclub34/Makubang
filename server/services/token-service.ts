@@ -1,5 +1,5 @@
 import { db } from '../db';
-import { verificationTokens } from '@shared/schema';
+import { verificationTokens } from '../shared/schema';
 import { eq, and, gt } from 'drizzle-orm';
 import crypto from 'crypto';
 import { addHours } from 'date-fns';

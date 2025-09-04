@@ -1,6 +1,6 @@
 import { drizzle } from 'drizzle-orm/postgres-js';
 import postgres from 'postgres';
-import * as schema from '@shared/schema';
+import * as schema from '../../shared/schema';
 
 // Get database URL from environment variables
 const databaseUrl = process.env.DATABASE_URL;
@@ -15,7 +15,7 @@ const queryClient = postgres(databaseUrl);
 // Create drizzle instance with schema
 export const db = drizzle(queryClient, { schema });
 
-export * from '@shared/schema';
+export * from '../../shared/schema';
 
 // Export types
 export type { InferModel, InferSelectModel, InferInsertModel } from 'drizzle-orm';

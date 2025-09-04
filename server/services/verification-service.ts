@@ -1,8 +1,8 @@
-import { db } from '@/server/db';
-import { emailVerifications, users } from '@shared/schema';
+import { db } from '../db';
+import { emailVerifications, users } from '../shared/schema';
 import { eq, and, gt } from 'drizzle-orm';
 import { v4 as uuidv4 } from 'uuid';
-import { signToken } from '@/lib/jwt';
+import { signToken } from '../lib/jwt';
 import { sendEmail } from './email-service';
 import { getEmailVerificationTemplate } from './email-templates';
 

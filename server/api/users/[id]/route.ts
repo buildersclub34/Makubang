@@ -1,9 +1,9 @@
 import { NextResponse } from 'next/server';
-import { auth } from '@/auth';
-import { db } from '@/server/db';
-import { users } from '@shared/schema';
+import { auth } from '../../auth';
+import { db } from '../../db';
+import { users } from '../../../shared/schema';
 import { eq, and } from 'drizzle-orm';
-import { logger } from '@/server/utils/logger';
+import { logger } from '../../utils/logger';
 
 // Get user profile
 export async function GET(

@@ -1,8 +1,8 @@
-import { db } from '@/server/db';
-import { users } from '@shared/schema';
+import { db } from '../db';
+import { users } from '../shared/schema';
 import { eq, and } from 'drizzle-orm';
 import bcrypt from 'bcryptjs';
-import { logger } from '@/server/utils/logger';
+import { logger } from '../utils/logger';
 
 export const userService = {
   /**

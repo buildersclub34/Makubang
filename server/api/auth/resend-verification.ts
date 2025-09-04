@@ -1,9 +1,9 @@
 import { NextApiRequest, NextApiResponse } from 'next';
-import { db } from '@/db';
-import { users, emailVerifications } from '@shared/schema';
+import { db } from '../../db';
+import { users, emailVerifications } from '../../shared/schema';
 import { eq, and, gte } from 'drizzle-orm';
-import { signJwt } from '@/lib/jwt';
-import { emailService } from '@/services/email-service';
+import { signJwt } from '../../lib/jwt';
+import { emailService } from '../../services/email-service';
 
 const VERIFICATION_EXPIRY_HOURS = 24; // 24 hours
 

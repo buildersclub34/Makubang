@@ -1,7 +1,7 @@
 import Razorpay from 'razorpay';
 import crypto from 'crypto';
 import { db } from '../db';
-import { payments, paymentStatus, paymentMethod, subscriptionPlans, restaurantSubscriptions } from '@shared/schema';
+import { payments, paymentStatus, paymentMethod, subscriptionPlans, restaurantSubscriptions } from '../shared/schema';
 import { eq, and } from 'drizzle-orm';
 import { logger } from '../utils/logger';
 
