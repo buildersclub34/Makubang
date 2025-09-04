@@ -1,23 +1,36 @@
-import { Pool, neonConfig } from '@neondatabase/serverless';
-import { drizzle } from 'drizzle-orm/neon-serverless';
-import ws from "ws";
-import * as schema from "../shared/schema";
 
-neonConfig.webSocketConstructor = ws;
+import { drizzle } from 'drizzle-orm/postgres-js';
+import postgres from 'postgres';
+import * as schema from '../shared/schema';
 
-if (!process.env.DATABASE_URL) {
-  throw new Error(
-    "DATABASE_URL must be set. Did you forget to provision a database?",
-  );
+const connectionString = process.env.DATABASE_URL || 'postgres://localhost:5432/makubang';
+
+// Create the connection
+const client = postgres(connectionString, {
+  max: 20,
+  idle_timeout: 20,
+  connect_timeout: 10,
+});
+
+// Create the drizzle instance
+export const db = drizzle(client, { schema });
+
+// Export the client for direct access if needed
+export { client };
+
+// Test the connection
+export async function testConnection() {
+  try {
+    await client`SELECT 1`;
+    console.log('✅ Database connected successfully');
+    return true;
+  } catch (error) {
+    console.error('❌ Database connection failed:', error);
+    return false;
+  }
 }
 
-export const pool = new Pool({ connectionString: process.env.DATABASE_URL });
-export const db = drizzle({ client: pool, schema });
-
-// Export schema for direct access
-export * from "../shared/schema";
-
-// Helper function to close database connection
-export const closeDb = async () => {
-  await pool.end();
-};
+// Close the connection
+export async function closeConnection() {
+  await client.end();
+}
