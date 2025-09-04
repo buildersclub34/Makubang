@@ -21,6 +21,10 @@ import { requestLogger } from './middleware/request-logger.js';
 import WebSocketService from './lib/websocket/server.js';
 
 const app = express();
+
+// Trust proxy for rate limiting and IP detection
+app.set('trust proxy', 1);
+
 const httpServer = createServer(app);
 const io = new Server(httpServer, {
   cors: {
@@ -63,6 +67,11 @@ const limiter = rateLimit({
   max: 100, // limit each IP to 100 requests per windowMs
   standardHeaders: true,
   legacyHeaders: false,
+  trustProxy: true, // Trust proxy headers
+  skip: (req) => {
+    // Skip rate limiting for health checks
+    return req.path === '/health';
+  }
 });
 app.use(limiter);
 
