@@ -1,14 +1,11 @@
 
 import { db } from "./db";
 import { 
-  deliveryWallet, 
+  wallets as deliveryWallet, 
   walletTransactions, 
-  withdrawalMethods, 
-  withdrawalRequests,
-  deliveryPartners,
-  deliveryEarnings
+  deliveryPartners
 } from "../shared/schema";
-import { eq, and, desc, sum, gte } from "drizzle-orm";
+import { eq, and, desc, sum, gte, count } from "drizzle-orm";
 
 export class WalletService {
   static async getDeliveryPartnerWallet(deliveryPartnerId: string) {
@@ -30,19 +27,20 @@ export class WalletService {
       weekStart.setDate(weekStart.getDate() - 7);
 
       const weeklyEarnings = await db
-        .select({ total: sum(deliveryEarnings.totalAmount) })
-        .from(deliveryEarnings)
+        .select({ total: sum(walletTransactions.amount) })
+        .from(walletTransactions)
         .where(and(
-          eq(deliveryEarnings.deliveryPartnerId, deliveryPartnerId),
-          gte(deliveryEarnings.createdAt, weekStart)
+          eq(walletTransactions.deliveryPartnerId, deliveryPartnerId),
+          gte(walletTransactions.createdAt, weekStart)
         ));
 
       const weeklyDeliveries = await db
-        .select({ count: sum(1) })
-        .from(deliveryEarnings)
+        .select({ count: count() })
+        .from(walletTransactions)
         .where(and(
-          eq(deliveryEarnings.deliveryPartnerId, deliveryPartnerId),
-          gte(deliveryEarnings.createdAt, weekStart)
+          eq(walletTransactions.deliveryPartnerId, deliveryPartnerId),
+          eq(walletTransactions.type, 'earning'),
+          gte(walletTransactions.createdAt, weekStart)
         ));
 
       return {
