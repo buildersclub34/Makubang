@@ -1,279 +1,284 @@
-import { db } from './db';
-import { 
-  payments, 
-  paymentStatus, 
-  paymentMethod, 
-  subscriptionPlans, 
-  restaurantSubscriptions,
-  restaurants
-} from '../shared/schema';
-import { eq, and } from 'drizzle-orm';
-import { 
-  createRazorpayOrder, 
-  verifyPaymentSignature,
-  capturePayment,
-  createPaymentRecord,
-  updatePaymentStatus,
-  RazorpayOrderOptions,
-  RazorpayPayment
-} from './services/razorpay-service';
 
-export interface PaymentData {
+import Razorpay from 'razorpay';
+import crypto from 'crypto';
+import { db } from './db';
+import { payments, orders } from '../shared/schema';
+import { eq } from 'drizzle-orm';
+
+export interface PaymentRequest {
   amount: number;
+  currency?: string;
   orderId: string;
   userId: string;
-  currency?: string;
-  metadata?: {
-    restaurantName?: string;
-    description?: string;
-    customerName?: string;
-    customerEmail?: string;
-    customerPhone?: string;
-    [key: string]: any;
-  };
+  description?: string;
+  metadata?: Record<string, any>;
 }
 
-export async function createPaymentIntent(paymentData: PaymentData) {
-  try {
-    // Convert amount to paise for Razorpay (1 INR = 100 paise)
-    const amountInPaise = Math.round(Number(paymentData.amount) * 100);
-    
-    // Prepare order options
-    const orderOptions: RazorpayOrderOptions = {
-      amount: amountInPaise,
-      currency: paymentData.currency || 'INR',
-      receipt: `order_${Date.now()}`,
-      payment_capture: 1,
-      notes: {
-        ...paymentData.metadata,
-        orderId: paymentData.orderId,
-        userId: paymentData.userId
-      }
-    };
+export interface PaymentVerification {
+  razorpay_order_id: string;
+  razorpay_payment_id: string;
+  razorpay_signature: string;
+}
 
-    // Create Razorpay order
-    const order = await createRazorpayOrder(amountInPaise, orderOptions);
-    
-    // Create payment record in database
-    const payment = await createPaymentRecord({
-      orderId: paymentData.orderId,
-      userId: paymentData.userId,
-      amount: paymentData.amount,
-      currency: paymentData.currency || 'INR',
-      paymentMethod: 'razorpay',
-      status: 'pending',
-      externalPaymentId: order.id,
-      metadata: {
-        ...paymentData.metadata,
-        razorpayOrderId: order.id
-      }
+export class PaymentService {
+  private razorpay: Razorpay;
+
+  constructor() {
+    if (!process.env.RAZORPAY_KEY_ID || !process.env.RAZORPAY_KEY_SECRET) {
+      throw new Error('Razorpay credentials not found in environment variables');
+    }
+
+    this.razorpay = new Razorpay({
+      key_id: process.env.RAZORPAY_KEY_ID,
+      key_secret: process.env.RAZORPAY_KEY_SECRET,
     });
-
-    return {
-      orderId: order.id,
-      amount: paymentData.amount,
-      currency: paymentData.currency || 'INR',
-      key: process.env.RAZORPAY_KEY_ID,
-      paymentId: payment.id,
-      name: paymentData.metadata?.restaurantName || 'Makubang Order',
-      description: paymentData.metadata?.description || 'Payment for your order',
-      prefill: {
-        name: paymentData.metadata?.customerName || '',
-        email: paymentData.metadata?.customerEmail || '',
-        contact: paymentData.metadata?.customerPhone || ''
-      },
-      theme: {
-        color: '#F37254'
-      }
-    };
-  } catch (error) {
-    console.error('Error creating payment intent:', error);
-    throw new Error('Failed to create payment intent');
   }
-}
 
-export async function verifyAndCapturePayment(
-  paymentId: string, 
-  orderId: string, 
-  razorpayPaymentId: string, 
-  razorpaySignature: string
-) {
-  try {
-    // Verify payment signature
-    const isValidSignature = await verifyPaymentSignature(orderId, razorpayPaymentId, razorpaySignature);
-    
-    if (!isValidSignature) {
-      throw new Error('Invalid payment signature');
+  // Create Razorpay order
+  async createOrder(paymentRequest: PaymentRequest) {
+    try {
+      const options = {
+        amount: Math.round(paymentRequest.amount * 100), // Convert to paise
+        currency: paymentRequest.currency || 'INR',
+        receipt: `order_${paymentRequest.orderId}`,
+        notes: {
+          orderId: paymentRequest.orderId,
+          userId: paymentRequest.userId,
+          ...paymentRequest.metadata,
+        },
+      };
+
+      const razorpayOrder = await this.razorpay.orders.create(options);
+
+      // Store payment record in database
+      const [payment] = await db.insert(payments).values({
+        id: crypto.randomUUID(),
+        orderId: paymentRequest.orderId,
+        userId: paymentRequest.userId,
+        amount: paymentRequest.amount.toString(),
+        currency: paymentRequest.currency || 'INR',
+        status: 'pending',
+        paymentMethod: 'razorpay',
+        externalPaymentId: razorpayOrder.id,
+        metadata: {
+          razorpayOrderId: razorpayOrder.id,
+          description: paymentRequest.description,
+          ...paymentRequest.metadata,
+        },
+        createdAt: new Date(),
+      }).returning();
+
+      return {
+        id: razorpayOrder.id,
+        amount: razorpayOrder.amount,
+        currency: razorpayOrder.currency,
+        receipt: razorpayOrder.receipt,
+        paymentId: payment.id,
+        key: process.env.RAZORPAY_KEY_ID,
+      };
+    } catch (error) {
+      console.error('Error creating Razorpay order:', error);
+      throw new Error('Failed to create payment order');
     }
-
-    // Get payment record
-    const [payment] = await db.select().from(payments).where(eq(payments.id, paymentId));
-    
-    if (!payment) {
-      throw new Error('Payment not found');
-    }
-
-    // Convert amount to paise for Razorpay (1 INR = 100 paise)
-    const amountInPaise = Math.round(Number(payment.amount) * 100);
-    
-    // Capture payment
-    const captureResponse = await capturePayment(razorpayPaymentId, amountInPaise);
-    
-    // Update payment status
-    const updatedPayment = await updatePaymentStatus({
-      paymentId,
-      status: captureResponse.status === 'captured' ? 'succeeded' : 'failed',
-      externalPaymentId: razorpayPaymentId
-    });
-
-    return {
-      success: captureResponse.status === 'captured',
-      payment: updatedPayment
-    };
-  } catch (error) {
-    console.error('Error verifying payment:', error);
-    
-    // Update payment status to failed
-    if (paymentId) {
-      await updatePaymentStatus({
-        paymentId,
-        status: 'failed',
-        externalPaymentId: razorpayPaymentId || undefined
-      });
-    }
-    
-    throw new Error('Payment verification failed');
   }
-}
 
-export async function createSubscriptionPayment(restaurantId: string, planId: string, userId: string, metadata?: { [key: string]: any }) {
-  try {
-    // Create subscription payment intent
-    const plan = await db
-      .select()
-      .from(subscriptionPlans)
-      .where(eq(subscriptionPlans.id, planId))
-      .then(rows => rows[0]);
-
-    if (!plan) {
-      throw new Error('Subscription plan not found');
-    }
-
-    // Ensure price is a number
-    const amount = typeof plan.price === 'string' ? parseFloat(plan.price) : plan.price;
-    
-    // Create payment intent with subscription metadata
-    const paymentIntent = await createPaymentIntent({
-      amount,
-      orderId: `sub_${Date.now()}`,
-      userId,
-      metadata: {
-        type: 'subscription',
-        planId: plan.id,
-        planName: plan.name,
-        description: `Subscription for ${plan.name} plan`,
-        ...(metadata || {})
-      }
-    });
-
-    return paymentIntent;
-  } catch (error) {
-    console.error('Error creating subscription payment:', error);
-    throw error;
-  }
-}
-
-export async function processWebhook(event: any) {
-  try {
-    const { event: eventType, payload } = event;
-    
-    if (eventType === 'payment.captured') {
-      const { payment } = payload;
-      const { order_id: orderId, id: razorpayPaymentId } = payment.entity;
+  // Verify payment signature
+  async verifyPayment(verification: PaymentVerification): Promise<boolean> {
+    try {
+      const { razorpay_order_id, razorpay_payment_id, razorpay_signature } = verification;
       
-      // Find payment record by order ID
-      const [paymentRecord] = await db
+      const body = razorpay_order_id + '|' + razorpay_payment_id;
+      const expectedSignature = crypto
+        .createHmac('sha256', process.env.RAZORPAY_KEY_SECRET!)
+        .update(body.toString())
+        .digest('hex');
+
+      return expectedSignature === razorpay_signature;
+    } catch (error) {
+      console.error('Error verifying payment:', error);
+      return false;
+    }
+  }
+
+  // Update payment status after verification
+  async updatePaymentStatus(
+    razorpayOrderId: string,
+    razorpayPaymentId: string,
+    status: 'succeeded' | 'failed'
+  ) {
+    try {
+      const [payment] = await db
+        .update(payments)
+        .set({
+          status,
+          externalPaymentId: razorpayPaymentId,
+          updatedAt: new Date(),
+        })
+        .where(eq(payments.externalPaymentId, razorpayOrderId))
+        .returning();
+
+      if (payment && status === 'succeeded') {
+        // Update order status
+        await db
+          .update(orders)
+          .set({
+            paymentStatus: 'completed',
+            status: 'confirmed',
+            updatedAt: new Date(),
+          })
+          .where(eq(orders.id, payment.orderId));
+      }
+
+      return payment;
+    } catch (error) {
+      console.error('Error updating payment status:', error);
+      throw new Error('Failed to update payment status');
+    }
+  }
+
+  // Calculate GST
+  static calculateGST(amount: number, gstRate: number = 18): {
+    baseAmount: number;
+    gstAmount: number;
+    totalAmount: number;
+  } {
+    const baseAmount = amount / (1 + gstRate / 100);
+    const gstAmount = amount - baseAmount;
+    
+    return {
+      baseAmount: Math.round(baseAmount * 100) / 100,
+      gstAmount: Math.round(gstAmount * 100) / 100,
+      totalAmount: amount,
+    };
+  }
+
+  // Process refund
+  async processRefund(paymentId: string, amount?: number, reason?: string) {
+    try {
+      const [payment] = await db
         .select()
         .from(payments)
-        .where(eq(payments.orderId, orderId));
+        .where(eq(payments.id, paymentId))
+        .limit(1);
+
+      if (!payment || !payment.externalPaymentId) {
+        throw new Error('Payment not found');
+      }
+
+      const refundAmount = amount ? Math.round(amount * 100) : undefined;
       
-      if (paymentRecord) {
-        await updatePaymentStatus({
-          paymentId: paymentRecord.id,
-          status: 'succeeded',
-          externalPaymentId: razorpayPaymentId
-        });
+      const refund = await this.razorpay.payments.refund(payment.externalPaymentId, {
+        amount: refundAmount,
+        notes: {
+          reason: reason || 'Order cancelled',
+          orderId: payment.orderId,
+        },
+      });
 
-        // If this was a subscription payment, update the subscription
-        const metadata = paymentRecord.metadata as { 
-          type?: string; 
-          planId?: string;
-          planName?: string;
-        };
-        
-        if (metadata?.type === 'subscription' && metadata.planId) {
-          // Get plan details
-          const [plan] = await db
-            .select()
-            .from(subscriptionPlans)
-            .where(eq(subscriptionPlans.id, metadata.planId));
-            
-          if (plan) {
-            const endDate = new Date();
-            endDate.setDate(endDate.getDate() + plan.durationDays);
-            
-            const subscriptionData = {
-              id: `sub_${crypto.randomUUID()}`,
-              restaurantId: paymentRecord.userId,
-              planId: plan.id,
-              status: 'active',
-              startDate: new Date(),
-              endDate,
-              paymentId: paymentRecord.id,
-              orderLimit: plan.maxOrders || null,
-              orderCount: 0,
-              metadata: {
-                planName: metadata.planName || plan.name
-              },
+      // Update payment status
+      await db
+        .update(payments)
+        .set({
+          status: 'refunded',
+          metadata: {
+            ...payment.metadata,
+            refund: {
+              id: refund.id,
+              amount: refund.amount,
+              reason,
               createdAt: new Date(),
-              updatedAt: new Date()
-            };
+            },
+          },
+          updatedAt: new Date(),
+        })
+        .where(eq(payments.id, paymentId));
 
-            await db.insert(restaurantSubscriptions)
-              .values(subscriptionData)
-              .onConflictDoUpdate({
-                target: restaurantSubscriptions.id,
-                set: {
-                  planId: plan.id,
-                  status: 'active',
-                  startDate: new Date(),
-                  endDate,
-                  paymentId: paymentRecord.id,
-                  orderLimit: plan.maxOrders || null,
-                  metadata: {
-                    planName: metadata.planName || plan.name
-                  },
-                  updatedAt: new Date()
-                }
-              });
-              
-            // Update restaurant's subscription tier
-            await db.update(restaurants)
-              .set({
-                subscriptionTier: metadata.planName?.toLowerCase() || 'basic',
-                subscriptionExpiresAt: endDate,
-                updatedAt: new Date()
-              })
-              .where(eq(restaurants.id, paymentRecord.userId));
-          }
+      return refund;
+    } catch (error) {
+      console.error('Error processing refund:', error);
+      throw new Error('Failed to process refund');
+    }
+  }
+
+  // Get payment details
+  async getPaymentDetails(paymentId: string) {
+    try {
+      const [payment] = await db
+        .select()
+        .from(payments)
+        .where(eq(payments.id, paymentId))
+        .limit(1);
+
+      if (!payment) {
+        throw new Error('Payment not found');
+      }
+
+      // Get Razorpay payment details if available
+      let razorpayDetails = null;
+      if (payment.externalPaymentId) {
+        try {
+          razorpayDetails = await this.razorpay.payments.fetch(payment.externalPaymentId);
+        } catch (error) {
+          console.warn('Could not fetch Razorpay payment details:', error);
         }
       }
+
+      return {
+        ...payment,
+        razorpayDetails,
+      };
+    } catch (error) {
+      console.error('Error fetching payment details:', error);
+      throw new Error('Failed to fetch payment details');
     }
-    
-    return { success: true };
-  } catch (error) {
-    const errorMessage = error instanceof Error ? error.message : 'Unknown error';
-    console.error('Error processing webhook:', errorMessage);
-    return { success: false, error: errorMessage };
+  }
+
+  // Handle webhook events
+  async handleWebhook(body: any, signature: string) {
+    try {
+      // Verify webhook signature
+      const expectedSignature = crypto
+        .createHmac('sha256', process.env.RAZORPAY_WEBHOOK_SECRET || '')
+        .update(JSON.stringify(body))
+        .digest('hex');
+
+      if (expectedSignature !== signature) {
+        throw new Error('Invalid webhook signature');
+      }
+
+      const { event, payload } = body;
+
+      switch (event) {
+        case 'payment.captured':
+          await this.handlePaymentCaptured(payload.payment.entity);
+          break;
+        case 'payment.failed':
+          await this.handlePaymentFailed(payload.payment.entity);
+          break;
+        case 'order.paid':
+          await this.handleOrderPaid(payload.order.entity);
+          break;
+        default:
+          console.log('Unhandled webhook event:', event);
+      }
+
+      return { success: true };
+    } catch (error) {
+      console.error('Error handling webhook:', error);
+      throw new Error('Failed to handle webhook');
+    }
+  }
+
+  private async handlePaymentCaptured(payment: any) {
+    await this.updatePaymentStatus(payment.order_id, payment.id, 'succeeded');
+  }
+
+  private async handlePaymentFailed(payment: any) {
+    await this.updatePaymentStatus(payment.order_id, payment.id, 'failed');
+  }
+
+  private async handleOrderPaid(order: any) {
+    // Handle order paid event
+    console.log('Order paid:', order.id);
   }
 }

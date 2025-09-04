@@ -13,20 +13,12 @@ import {
   orderItems
 } from "../shared/schema";
 import { AuthService } from "./auth-service";
-// import { WalletService } from "./wallet-service";
-// import { DeliveryService } from "./delivery-service";
-// import { DeliveryTracking } from "./delivery-tracking";
-// import { OrderService } from "./order-service";
-// import { PaymentService } from "./payment-service";
-// import { NotificationService } from "./notification-service";
-// import { LoyaltyService } from "./loyalty-service";
-// import { ReferralService } from "./referral-service";
-// import { SubscriptionService } from "./subscription-service";
-// import { FileUploadService } from "./file-upload";
-// import { ContentModerationService } from "./content-moderation";
-// import { RecommendationService } from "./recommendation-service";
-// import { AnalyticsService } from "./analytics-service";
-// import { MLRecommendationService } from "./ml-recommendation";
+import { PaymentService } from "./payment-service";
+import { DeliveryService } from "./delivery-service";
+import { OrderService } from "./order-service";
+import { fileUploadService } from "./file-upload";
+import { ContentModerationService } from "./content-moderation";
+import { pushNotificationService } from "./push-notification-service";
 import jwt from "jsonwebtoken";
 import bcrypt from "bcryptjs";
 import multer from "multer";

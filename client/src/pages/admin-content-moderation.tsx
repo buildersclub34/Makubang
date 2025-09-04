@@ -1,418 +1,390 @@
 
-import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Button } from "@/components/ui/button";
-import { Badge } from "@/components/ui/badge";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
-import { Textarea } from "@/components/ui/textarea";
-import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { CheckCircle, XCircle, Eye, Flag, Search, Filter, Calendar, User, Video, MessageSquare } from "lucide-react";
-import { useState } from "react";
-import { useToast } from "@/hooks/use-toast";
+import React, { useState, useEffect } from 'react';
+import { Card, CardContent, CardHeader, CardTitle } from '../components/ui/card';
+import { Button } from '../components/ui/button';
+import { Badge } from '../components/ui/badge';
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '../components/ui/tabs';
+import { Input } from '../components/ui/input';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../components/ui/select';
+import { CheckCircle, XCircle, AlertTriangle, Eye, Search, Filter } from 'lucide-react';
+import { useToast } from '../components/ui/use-toast';
 
-interface ContentItem {
+interface ContentReport {
   id: string;
-  type: 'video' | 'comment' | 'review';
-  title?: string;
-  content: string;
-  thumbnailUrl?: string;
-  videoUrl?: string;
-  creator: {
-    id: string;
-    name: string;
-    profilePicture?: string;
-  };
-  restaurant?: {
-    id: string;
-    name: string;
-  };
-  status: 'pending' | 'approved' | 'rejected' | 'flagged';
-  reportCount: number;
-  reportReasons: string[];
-  moderationNotes?: string;
+  contentType: 'video' | 'comment' | 'profile';
+  contentId: string;
+  reporterId: string;
+  reason: string;
+  description: string;
+  status: 'pending' | 'approved' | 'rejected';
+  severity: 'low' | 'medium' | 'high';
+  autoFlagged: boolean;
   createdAt: string;
-  updatedAt: string;
+  content?: {
+    title?: string;
+    description?: string;
+    videoUrl?: string;
+    thumbnailUrl?: string;
+    text?: string;
+  };
+  reporter?: {
+    name: string;
+    email: string;
+  };
 }
 
 export default function AdminContentModeration() {
+  const [reports, setReports] = useState<ContentReport[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [filter, setFilter] = useState('pending');
+  const [searchTerm, setSearchTerm] = useState('');
+  const [selectedReport, setSelectedReport] = useState<ContentReport | null>(null);
   const { toast } = useToast();
-  const queryClient = useQueryClient();
-  const [selectedTab, setSelectedTab] = useState("pending");
-  const [searchTerm, setSearchTerm] = useState("");
-  const [filterType, setFilterType] = useState("all");
-  const [selectedItem, setSelectedItem] = useState<ContentItem | null>(null);
-  const [moderationNotes, setModerationNotes] = useState("");
 
-  // Fetch content items for moderation
-  const { data: contentItems, isLoading } = useQuery({
-    queryKey: ["/api/admin/content-moderation", selectedTab, searchTerm, filterType],
-    queryFn: async () => {
-      const params = new URLSearchParams({
-        status: selectedTab,
-        search: searchTerm,
-        type: filterType,
-      });
-      const response = await fetch(`/api/admin/content-moderation?${params}`);
-      if (!response.ok) throw new Error('Failed to fetch content');
-      return response.json();
-    },
-  });
+  useEffect(() => {
+    fetchReports();
+  }, [filter]);
 
-  // Moderation action mutation
-  const moderationMutation = useMutation({
-    mutationFn: async ({ itemId, action, notes }: { itemId: string; action: 'approve' | 'reject' | 'flag'; notes?: string }) => {
-      const response = await fetch(`/api/admin/content-moderation/${itemId}`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ action, notes }),
+  const fetchReports = async () => {
+    try {
+      setLoading(true);
+      const response = await fetch(`/api/admin/content/reports?status=${filter}&search=${searchTerm}`, {
+        headers: {
+          'Authorization': `Bearer ${localStorage.getItem('token')}`,
+        },
       });
-      if (!response.ok) throw new Error('Failed to moderate content');
-      return response.json();
-    },
-    onSuccess: (data, variables) => {
-      queryClient.invalidateQueries({ queryKey: ["/api/admin/content-moderation"] });
-      toast({
-        title: "Action completed",
-        description: `Content has been ${variables.action}d successfully.`,
-      });
-      setSelectedItem(null);
-      setModerationNotes("");
-    },
-    onError: (error) => {
+      
+      if (response.ok) {
+        const data = await response.json();
+        setReports(data.reports);
+      } else {
+        throw new Error('Failed to fetch reports');
+      }
+    } catch (error) {
       toast({
         title: "Error",
-        description: "Failed to perform moderation action. Please try again.",
+        description: "Failed to load content reports",
         variant: "destructive",
       });
-    },
-  });
-
-  const handleModeration = (action: 'approve' | 'reject' | 'flag') => {
-    if (!selectedItem) return;
-    
-    moderationMutation.mutate({
-      itemId: selectedItem.id,
-      action,
-      notes: moderationNotes,
-    });
-  };
-
-  const getStatusBadgeVariant = (status: string) => {
-    switch (status) {
-      case 'approved': return 'default';
-      case 'rejected': return 'destructive';
-      case 'flagged': return 'secondary';
-      case 'pending': return 'outline';
-      default: return 'outline';
+    } finally {
+      setLoading(false);
     }
   };
 
-  const getContentTypeIcon = (type: string) => {
-    switch (type) {
-      case 'video': return <Video className="w-4 h-4" />;
-      case 'comment': return <MessageSquare className="w-4 h-4" />;
-      default: return <Eye className="w-4 h-4" />;
+  const handleAction = async (reportId: string, action: 'approve' | 'reject', notes?: string) => {
+    try {
+      const response = await fetch(`/api/admin/content/reports/${reportId}/${action}`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${localStorage.getItem('token')}`,
+        },
+        body: JSON.stringify({ notes }),
+      });
+
+      if (response.ok) {
+        toast({
+          title: "Success",
+          description: `Content ${action}d successfully`,
+        });
+        fetchReports();
+        setSelectedReport(null);
+      } else {
+        throw new Error(`Failed to ${action} content`);
+      }
+    } catch (error) {
+      toast({
+        title: "Error",
+        description: `Failed to ${action} content`,
+        variant: "destructive",
+      });
     }
   };
+
+  const getSeverityColor = (severity: string) => {
+    switch (severity) {
+      case 'high': return 'destructive';
+      case 'medium': return 'default';
+      case 'low': return 'secondary';
+      default: return 'secondary';
+    }
+  };
+
+  const getReasonColor = (reason: string) => {
+    if (reason.includes('hate') || reason.includes('violence')) return 'destructive';
+    if (reason.includes('spam') || reason.includes('inappropriate')) return 'default';
+    return 'secondary';
+  };
+
+  const filteredReports = reports.filter(report =>
+    report.reason.toLowerCase().includes(searchTerm.toLowerCase()) ||
+    report.description?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+    report.content?.title?.toLowerCase().includes(searchTerm.toLowerCase())
+  );
 
   return (
-    <div className="min-h-screen bg-background p-6">
-      <div className="max-w-7xl mx-auto">
-        {/* Header */}
-        <div className="mb-8">
-          <h1 className="text-3xl font-bold mb-2">Content Moderation</h1>
-          <p className="text-muted-foreground">Review and moderate platform content</p>
+    <div className="container mx-auto py-6 space-y-6">
+      <div className="flex justify-between items-center">
+        <h1 className="text-3xl font-bold">Content Moderation</h1>
+        <div className="flex space-x-2">
+          <div className="relative">
+            <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-4 h-4" />
+            <Input
+              placeholder="Search reports..."
+              value={searchTerm}
+              onChange={(e) => setSearchTerm(e.target.value)}
+              className="pl-10 w-64"
+            />
+          </div>
+          <Select value={filter} onValueChange={setFilter}>
+            <SelectTrigger className="w-40">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="pending">Pending</SelectItem>
+              <SelectItem value="approved">Approved</SelectItem>
+              <SelectItem value="rejected">Rejected</SelectItem>
+              <SelectItem value="all">All Reports</SelectItem>
+            </SelectContent>
+          </Select>
         </div>
+      </div>
 
-        {/* Filters and Search */}
-        <Card className="mb-6">
-          <CardContent className="p-6">
-            <div className="flex flex-col md:flex-row gap-4 items-center">
-              <div className="flex-1 relative">
-                <Search className="absolute left-3 top-3 h-4 w-4 text-muted-foreground" />
-                <Input
-                  placeholder="Search content..."
-                  value={searchTerm}
-                  onChange={(e) => setSearchTerm(e.target.value)}
-                  className="pl-10"
-                />
+      {/* Statistics Cards */}
+      <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+        <Card>
+          <CardContent className="p-4">
+            <div className="flex items-center space-x-2">
+              <AlertTriangle className="w-5 h-5 text-orange-500" />
+              <div>
+                <p className="text-sm text-muted-foreground">Pending</p>
+                <p className="text-2xl font-bold">
+                  {reports.filter(r => r.status === 'pending').length}
+                </p>
               </div>
-              <Select value={filterType} onValueChange={setFilterType}>
-                <SelectTrigger className="w-48">
-                  <SelectValue placeholder="Content Type" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="all">All Content</SelectItem>
-                  <SelectItem value="video">Videos</SelectItem>
-                  <SelectItem value="comment">Comments</SelectItem>
-                  <SelectItem value="review">Reviews</SelectItem>
-                </SelectContent>
-              </Select>
             </div>
           </CardContent>
         </Card>
-
-        {/* Content Moderation Tabs */}
-        <Tabs value={selectedTab} onValueChange={setSelectedTab}>
-          <TabsList className="grid w-full grid-cols-4">
-            <TabsTrigger value="pending">
-              Pending ({contentItems?.filter((item: ContentItem) => item.status === 'pending').length || 0})
-            </TabsTrigger>
-            <TabsTrigger value="flagged">
-              Flagged ({contentItems?.filter((item: ContentItem) => item.status === 'flagged').length || 0})
-            </TabsTrigger>
-            <TabsTrigger value="approved">
-              Approved ({contentItems?.filter((item: ContentItem) => item.status === 'approved').length || 0})
-            </TabsTrigger>
-            <TabsTrigger value="rejected">
-              Rejected ({contentItems?.filter((item: ContentItem) => item.status === 'rejected').length || 0})
-            </TabsTrigger>
-          </TabsList>
-
-          <TabsContent value={selectedTab} className="mt-6">
-            {isLoading ? (
-              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-                {Array.from({ length: 6 }).map((_, i) => (
-                  <Card key={i} className="animate-pulse">
-                    <CardContent className="p-6">
-                      <div className="h-32 bg-muted rounded-lg mb-4"></div>
-                      <div className="h-4 bg-muted rounded mb-2"></div>
-                      <div className="h-4 bg-muted rounded w-2/3"></div>
-                    </CardContent>
-                  </Card>
-                ))}
+        
+        <Card>
+          <CardContent className="p-4">
+            <div className="flex items-center space-x-2">
+              <CheckCircle className="w-5 h-5 text-green-500" />
+              <div>
+                <p className="text-sm text-muted-foreground">Approved</p>
+                <p className="text-2xl font-bold">
+                  {reports.filter(r => r.status === 'approved').length}
+                </p>
               </div>
-            ) : (
-              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-                {contentItems?.map((item: ContentItem) => (
-                  <Card key={item.id} className="overflow-hidden">
-                    <CardContent className="p-0">
-                      {/* Content Preview */}
-                      {item.type === 'video' && item.thumbnailUrl && (
-                        <div className="relative h-48 bg-muted">
-                          <img 
-                            src={item.thumbnailUrl} 
-                            alt={item.title} 
-                            className="w-full h-full object-cover"
+            </div>
+          </CardContent>
+        </Card>
+        
+        <Card>
+          <CardContent className="p-4">
+            <div className="flex items-center space-x-2">
+              <XCircle className="w-5 h-5 text-red-500" />
+              <div>
+                <p className="text-sm text-muted-foreground">Rejected</p>
+                <p className="text-2xl font-bold">
+                  {reports.filter(r => r.status === 'rejected').length}
+                </p>
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+        
+        <Card>
+          <CardContent className="p-4">
+            <div className="flex items-center space-x-2">
+              <AlertTriangle className="w-5 h-5 text-red-500" />
+              <div>
+                <p className="text-sm text-muted-foreground">High Severity</p>
+                <p className="text-2xl font-bold">
+                  {reports.filter(r => r.severity === 'high').length}
+                </p>
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+      </div>
+
+      {/* Reports List */}
+      <Card>
+        <CardHeader>
+          <CardTitle>Content Reports</CardTitle>
+        </CardHeader>
+        <CardContent>
+          {loading ? (
+            <div className="flex justify-center py-8">
+              <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary"></div>
+            </div>
+          ) : filteredReports.length === 0 ? (
+            <div className="text-center py-8 text-muted-foreground">
+              No reports found
+            </div>
+          ) : (
+            <div className="space-y-4">
+              {filteredReports.map((report) => (
+                <div
+                  key={report.id}
+                  className="border border-border rounded-lg p-4 hover:bg-muted/50 transition-colors"
+                >
+                  <div className="flex items-start justify-between">
+                    <div className="flex-1 space-y-2">
+                      <div className="flex items-center space-x-2">
+                        <Badge variant={getSeverityColor(report.severity)}>
+                          {report.severity.toUpperCase()}
+                        </Badge>
+                        <Badge variant={getReasonColor(report.reason)}>
+                          {report.reason}
+                        </Badge>
+                        <Badge variant="outline">
+                          {report.contentType}
+                        </Badge>
+                        {report.autoFlagged && (
+                          <Badge variant="secondary">AUTO-FLAGGED</Badge>
+                        )}
+                      </div>
+                      
+                      <div className="flex items-start space-x-4">
+                        {report.content?.thumbnailUrl && (
+                          <img
+                            src={report.content.thumbnailUrl}
+                            alt="Content preview"
+                            className="w-16 h-16 rounded-lg object-cover"
                           />
-                          <div className="absolute top-2 left-2">
-                            <Badge variant={getStatusBadgeVariant(item.status)}>
-                              {item.status}
-                            </Badge>
-                          </div>
-                          {item.reportCount > 0 && (
-                            <div className="absolute top-2 right-2">
-                              <Badge variant="destructive" className="flex items-center gap-1">
-                                <Flag className="w-3 h-3" />
-                                {item.reportCount}
-                              </Badge>
-                            </div>
-                          )}
-                        </div>
-                      )}
-
-                      <div className="p-4">
-                        {/* Content Info */}
-                        <div className="flex items-start justify-between mb-3">
-                          <div className="flex items-center gap-2 text-sm text-muted-foreground">
-                            {getContentTypeIcon(item.type)}
-                            <span className="capitalize">{item.type}</span>
-                          </div>
-                        </div>
-
-                        <h3 className="font-semibold mb-2 line-clamp-2">
-                          {item.title || item.content.substring(0, 50) + '...'}
-                        </h3>
-
-                        {/* Creator Info */}
-                        <div className="flex items-center gap-2 mb-3">
-                          <img 
-                            src={item.creator.profilePicture || '/placeholder-avatar.jpg'} 
-                            alt={item.creator.name}
-                            className="w-6 h-6 rounded-full"
-                          />
-                          <span className="text-sm text-muted-foreground">
-                            {item.creator.name}
-                          </span>
-                        </div>
-
-                        {/* Restaurant Info */}
-                        {item.restaurant && (
-                          <p className="text-sm text-muted-foreground mb-3">
-                            Restaurant: {item.restaurant.name}
+                        )}
+                        <div className="flex-1">
+                          <h3 className="font-medium">
+                            {report.content?.title || 'Untitled Content'}
+                          </h3>
+                          <p className="text-sm text-muted-foreground">
+                            {report.description}
                           </p>
-                        )}
-
-                        {/* Report Reasons */}
-                        {item.reportReasons.length > 0 && (
-                          <div className="mb-3">
-                            <p className="text-sm font-medium text-destructive mb-1">
-                              Report Reasons:
-                            </p>
-                            <div className="flex flex-wrap gap-1">
-                              {item.reportReasons.map((reason, index) => (
-                                <Badge key={index} variant="outline" className="text-xs">
-                                  {reason}
-                                </Badge>
-                              ))}
-                            </div>
-                          </div>
-                        )}
-
-                        {/* Action Buttons */}
-                        <div className="flex gap-2">
-                          <Dialog>
-                            <DialogTrigger asChild>
-                              <Button 
-                                size="sm" 
-                                variant="outline" 
-                                className="flex-1"
-                                onClick={() => setSelectedItem(item)}
-                              >
-                                <Eye className="w-4 h-4 mr-1" />
-                                Review
-                              </Button>
-                            </DialogTrigger>
-                            <DialogContent className="max-w-4xl max-h-[90vh] overflow-y-auto">
-                              <DialogHeader>
-                                <DialogTitle>Content Review</DialogTitle>
-                              </DialogHeader>
-                              
-                              {selectedItem && (
-                                <div className="space-y-6">
-                                  {/* Content Display */}
-                                  {selectedItem.type === 'video' && selectedItem.videoUrl && (
-                                    <video 
-                                      controls 
-                                      className="w-full max-h-96 rounded-lg"
-                                      poster={selectedItem.thumbnailUrl}
-                                    >
-                                      <source src={selectedItem.videoUrl} type="video/mp4" />
-                                    </video>
-                                  )}
-
-                                  <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                                    {/* Content Details */}
-                                    <div className="space-y-4">
-                                      <div>
-                                        <Label className="font-semibold">Title/Content</Label>
-                                        <p className="text-sm mt-1">{selectedItem.title || selectedItem.content}</p>
-                                      </div>
-                                      
-                                      <div>
-                                        <Label className="font-semibold">Creator</Label>
-                                        <p className="text-sm mt-1">{selectedItem.creator.name}</p>
-                                      </div>
-
-                                      {selectedItem.restaurant && (
-                                        <div>
-                                          <Label className="font-semibold">Restaurant</Label>
-                                          <p className="text-sm mt-1">{selectedItem.restaurant.name}</p>
-                                        </div>
-                                      )}
-
-                                      <div>
-                                        <Label className="font-semibold">Created</Label>
-                                        <p className="text-sm mt-1">
-                                          {new Date(selectedItem.createdAt).toLocaleString()}
-                                        </p>
-                                      </div>
-                                    </div>
-
-                                    {/* Moderation Section */}
-                                    <div className="space-y-4">
-                                      <div>
-                                        <Label className="font-semibold">Current Status</Label>
-                                        <Badge 
-                                          variant={getStatusBadgeVariant(selectedItem.status)}
-                                          className="mt-1"
-                                        >
-                                          {selectedItem.status}
-                                        </Badge>
-                                      </div>
-
-                                      {selectedItem.reportReasons.length > 0 && (
-                                        <div>
-                                          <Label className="font-semibold">Report Reasons</Label>
-                                          <div className="flex flex-wrap gap-1 mt-1">
-                                            {selectedItem.reportReasons.map((reason, index) => (
-                                              <Badge key={index} variant="destructive" className="text-xs">
-                                                {reason}
-                                              </Badge>
-                                            ))}
-                                          </div>
-                                        </div>
-                                      )}
-
-                                      {selectedItem.moderationNotes && (
-                                        <div>
-                                          <Label className="font-semibold">Previous Notes</Label>
-                                          <p className="text-sm mt-1 bg-muted p-2 rounded">
-                                            {selectedItem.moderationNotes}
-                                          </p>
-                                        </div>
-                                      )}
-
-                                      <div>
-                                        <Label htmlFor="notes" className="font-semibold">
-                                          Moderation Notes
-                                        </Label>
-                                        <Textarea
-                                          id="notes"
-                                          placeholder="Add notes about your decision..."
-                                          value={moderationNotes}
-                                          onChange={(e) => setModerationNotes(e.target.value)}
-                                          className="mt-1"
-                                        />
-                                      </div>
-
-                                      {/* Action Buttons */}
-                                      <div className="flex gap-2">
-                                        <Button
-                                          onClick={() => handleModeration('approve')}
-                                          disabled={moderationMutation.isPending}
-                                          className="flex-1"
-                                        >
-                                          <CheckCircle className="w-4 h-4 mr-1" />
-                                          Approve
-                                        </Button>
-                                        <Button
-                                          variant="destructive"
-                                          onClick={() => handleModeration('reject')}
-                                          disabled={moderationMutation.isPending}
-                                          className="flex-1"
-                                        >
-                                          <XCircle className="w-4 h-4 mr-1" />
-                                          Reject
-                                        </Button>
-                                        <Button
-                                          variant="outline"
-                                          onClick={() => handleModeration('flag')}
-                                          disabled={moderationMutation.isPending}
-                                        >
-                                          <Flag className="w-4 h-4 mr-1" />
-                                          Flag
-                                        </Button>
-                                      </div>
-                                    </div>
-                                  </div>
-                                </div>
-                              )}
-                            </DialogContent>
-                          </Dialog>
+                          <p className="text-xs text-muted-foreground mt-1">
+                            Reported by: {report.reporter?.name} • {new Date(report.createdAt).toLocaleDateString()}
+                          </p>
                         </div>
                       </div>
-                    </CardContent>
-                  </Card>
-                ))}
+                    </div>
+                    
+                    <div className="flex space-x-2 ml-4">
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        onClick={() => setSelectedReport(report)}
+                      >
+                        <Eye className="w-4 h-4 mr-1" />
+                        Review
+                      </Button>
+                      
+                      {report.status === 'pending' && (
+                        <>
+                          <Button
+                            size="sm"
+                            variant="default"
+                            onClick={() => handleAction(report.id, 'approve')}
+                          >
+                            <CheckCircle className="w-4 h-4 mr-1" />
+                            Approve
+                          </Button>
+                          <Button
+                            size="sm"
+                            variant="destructive"
+                            onClick={() => handleAction(report.id, 'reject')}
+                          >
+                            <XCircle className="w-4 h-4 mr-1" />
+                            Reject
+                          </Button>
+                        </>
+                      )}
+                    </div>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </CardContent>
+      </Card>
+
+      {/* Content Review Modal */}
+      {selectedReport && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+          <Card className="w-full max-w-4xl max-h-[90vh] overflow-auto">
+            <CardHeader>
+              <CardTitle>Review Content Report</CardTitle>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <h4 className="font-medium mb-2">Report Details</h4>
+                  <div className="space-y-2 text-sm">
+                    <p><strong>Type:</strong> {selectedReport.contentType}</p>
+                    <p><strong>Reason:</strong> {selectedReport.reason}</p>
+                    <p><strong>Severity:</strong> {selectedReport.severity}</p>
+                    <p><strong>Auto-flagged:</strong> {selectedReport.autoFlagged ? 'Yes' : 'No'}</p>
+                    <p><strong>Reporter:</strong> {selectedReport.reporter?.name}</p>
+                  </div>
+                </div>
+                
+                <div>
+                  <h4 className="font-medium mb-2">Content Preview</h4>
+                  {selectedReport.content?.videoUrl && (
+                    <video
+                      src={selectedReport.content.videoUrl}
+                      controls
+                      className="w-full max-h-64 rounded-lg"
+                    />
+                  )}
+                  {selectedReport.content?.title && (
+                    <p className="mt-2 font-medium">{selectedReport.content.title}</p>
+                  )}
+                  {selectedReport.content?.description && (
+                    <p className="text-sm text-muted-foreground">
+                      {selectedReport.content.description}
+                    </p>
+                  )}
+                </div>
               </div>
-            )}
-          </TabsContent>
-        </Tabs>
-      </div>
+              
+              <div>
+                <h4 className="font-medium mb-2">Report Description</h4>
+                <p className="text-sm bg-muted p-3 rounded-lg">
+                  {selectedReport.description}
+                </p>
+              </div>
+              
+              <div className="flex justify-end space-x-2">
+                <Button
+                  variant="outline"
+                  onClick={() => setSelectedReport(null)}
+                >
+                  Close
+                </Button>
+                {selectedReport.status === 'pending' && (
+                  <>
+                    <Button
+                      variant="default"
+                      onClick={() => handleAction(selectedReport.id, 'approve')}
+                    >
+                      <CheckCircle className="w-4 h-4 mr-1" />
+                      Approve Content
+                    </Button>
+                    <Button
+                      variant="destructive"
+                      onClick={() => handleAction(selectedReport.id, 'reject')}
+                    >
+                      <XCircle className="w-4 h-4 mr-1" />
+                      Remove Content
+                    </Button>
+                  </>
+                )}
+              </div>
+            </CardContent>
+          </Card>
+        </div>
+      )}
     </div>
   );
 }

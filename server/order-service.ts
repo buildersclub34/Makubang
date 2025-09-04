@@ -1,506 +1,547 @@
 
 import { db } from './db';
-import { orders, restaurants, dishes, users, notifications } from '../shared/schema';
-import { eq, and, desc, sql, inArray } from 'drizzle-orm';
-import { v4 as uuidv4 } from 'uuid';
+import { orders, orderItems, menuItems, restaurants, users } from '../shared/schema';
+import { eq, and, desc } from 'drizzle-orm';
+import { PaymentService } from './payment-service';
+import { DeliveryService } from './delivery-service';
+import { pushNotificationService } from './push-notification-service';
+import { WebSocketService } from './websocket';
 
-export interface CreateOrderData {
+export interface OrderRequest {
   userId: string;
   restaurantId: string;
   items: Array<{
-    dishId: string;
+    menuItemId: string;
     quantity: number;
-    price: number;
+    customizations?: string;
     specialInstructions?: string;
   }>;
   deliveryAddress: {
     street: string;
     city: string;
     state: string;
-    zipCode: string;
-    coordinates?: { lat: number; lng: number };
+    pincode: string;
+    lat: number;
+    lng: number;
+    landmark?: string;
   };
-  deliveryInstructions?: string;
-  paymentMethod: string;
+  paymentMethodId?: string;
+  notes?: string;
+  promocode?: string;
 }
 
-export interface OrderItem extends CreateOrderData['items'][0] {
-  dishName: string;
-  dishImage?: string;
-}
-
-export interface OrderWithDetails {
-  id: string;
-  orderNumber: string;
-  userId: string;
-  restaurantId: string;
-  status: string;
-  items: OrderItem[];
-  subtotal: string;
-  deliveryFee: string;
-  tax: string;
-  discount: string;
-  totalAmount: string;
-  currency: string;
-  deliveryAddress: any;
-  deliveryInstructions?: string;
-  estimatedDeliveryTime?: Date;
-  actualDeliveryTime?: Date;
-  deliveryPartnerId?: string;
-  paymentId?: string;
-  createdAt: Date;
-  updatedAt: Date;
-  restaurant?: {
-    id: string;
-    name: string;
-    logo?: string;
-    phone?: string;
-  };
-  user?: {
-    id: string;
-    name: string;
-    phone?: string;
-    email: string;
-  };
-  deliveryPartner?: {
-    id: string;
-    name: string;
-    phone?: string;
+export interface OrderCalculation {
+  subtotal: number;
+  deliveryFee: number;
+  platformFee: number;
+  gstAmount: number;
+  discountAmount: number;
+  totalAmount: number;
+  breakdown: {
+    itemTotal: number;
+    taxes: number;
+    fees: number;
+    savings: number;
   };
 }
 
-class OrderService {
-  /**
-   * Create a new order
-   */
-  async createOrder(orderData: CreateOrderData): Promise<{ order: OrderWithDetails; orderNumber: string }> {
+export class OrderService {
+  private paymentService: PaymentService;
+  private deliveryService: DeliveryService;
+  private wsService: WebSocketService;
+
+  constructor(wsService: WebSocketService) {
+    this.paymentService = new PaymentService();
+    this.deliveryService = new DeliveryService(wsService);
+    this.wsService = wsService;
+  }
+
+  // Calculate order total with all fees and taxes
+  async calculateOrderTotal(orderRequest: OrderRequest): Promise<OrderCalculation> {
     try {
-      // Generate unique order number
-      const orderNumber = `ORD${Date.now()}${Math.floor(Math.random() * 1000)}`;
+      let subtotal = 0;
+      const itemBreakdown = [];
 
-      // Get restaurant details for validation
-      const restaurant = await db.query.restaurants.findFirst({
-        where: eq(restaurants.id, orderData.restaurantId),
-      });
+      // Calculate item totals
+      for (const item of orderRequest.items) {
+        const [menuItem] = await db
+          .select()
+          .from(menuItems)
+          .where(eq(menuItems.id, item.menuItemId))
+          .limit(1);
+
+        if (!menuItem) {
+          throw new Error(`Menu item ${item.menuItemId} not found`);
+        }
+
+        const itemTotal = parseFloat(menuItem.price) * item.quantity;
+        subtotal += itemTotal;
+        itemBreakdown.push({
+          menuItemId: item.menuItemId,
+          name: menuItem.name,
+          price: parseFloat(menuItem.price),
+          quantity: item.quantity,
+          total: itemTotal,
+        });
+      }
+
+      // Calculate delivery fee
+      const deliveryFee = this.calculateDeliveryFee(subtotal, orderRequest.deliveryAddress);
+
+      // Calculate platform fee
+      const platformFeeRate = parseFloat(process.env.PLATFORM_FEE_PERCENTAGE || '5') / 100;
+      const platformFee = subtotal * platformFeeRate;
+
+      // Calculate GST
+      const gstRate = parseFloat(process.env.GST_RATE || '18') / 100;
+      const itemsWithGst = subtotal + platformFee;
+      const gstAmount = itemsWithGst * gstRate;
+
+      // Apply discounts (placeholder - implement promocode logic)
+      const discountAmount = 0;
+
+      const totalAmount = subtotal + deliveryFee + platformFee + gstAmount - discountAmount;
+
+      return {
+        subtotal,
+        deliveryFee,
+        platformFee,
+        gstAmount,
+        discountAmount,
+        totalAmount,
+        breakdown: {
+          itemTotal: subtotal,
+          taxes: gstAmount,
+          fees: deliveryFee + platformFee,
+          savings: discountAmount,
+        },
+      };
+    } catch (error) {
+      console.error('Error calculating order total:', error);
+      throw new Error('Failed to calculate order total');
+    }
+  }
+
+  // Create new order
+  async createOrder(orderRequest: OrderRequest): Promise<any> {
+    try {
+      // Validate restaurant and menu items
+      await this.validateOrderRequest(orderRequest);
+
+      // Calculate order total
+      const calculation = await this.calculateOrderTotal(orderRequest);
+
+      // Check minimum order amount
+      const minOrderAmount = parseFloat(process.env.MIN_ORDER_AMOUNT || '100');
+      if (calculation.subtotal < minOrderAmount) {
+        throw new Error(`Minimum order amount is ₹${minOrderAmount}`);
+      }
+
+      // Get restaurant details
+      const [restaurant] = await db
+        .select()
+        .from(restaurants)
+        .where(eq(restaurants.id, orderRequest.restaurantId))
+        .limit(1);
 
       if (!restaurant) {
         throw new Error('Restaurant not found');
       }
 
-      // Get dish details and validate items
-      const dishIds = orderData.items.map(item => item.dishId);
-      const dishesData = await db.query.dishes.findMany({
-        where: and(
-          inArray(dishes.id, dishIds),
-          eq(dishes.restaurantId, orderData.restaurantId),
-          eq(dishes.isAvailable, true)
-        ),
-      });
+      // Create order
+      const orderId = crypto.randomUUID();
+      const [order] = await db
+        .insert(orders)
+        .values({
+          id: orderId,
+          userId: orderRequest.userId,
+          restaurantId: orderRequest.restaurantId,
+          status: 'pending_payment',
+          totalAmount: calculation.totalAmount.toString(),
+          deliveryFee: calculation.deliveryFee.toString(),
+          platformFee: calculation.platformFee.toString(),
+          taxes: calculation.gstAmount.toString(),
+          discountAmount: calculation.discountAmount.toString(),
+          deliveryAddress: JSON.stringify(orderRequest.deliveryAddress),
+          pickupAddress: JSON.stringify({
+            street: restaurant.address,
+            lat: parseFloat(restaurant.latitude || '0'),
+            lng: parseFloat(restaurant.longitude || '0'),
+          }),
+          paymentMethod: 'razorpay',
+          paymentStatus: 'pending',
+          notes: orderRequest.notes,
+          estimatedDeliveryTime: new Date(Date.now() + 45 * 60000), // 45 minutes
+          createdAt: new Date(),
+          updatedAt: new Date(),
+        })
+        .returning();
 
-      if (dishesData.length !== orderData.items.length) {
-        throw new Error('Some dishes are not available or do not belong to this restaurant');
+      // Create order items
+      const orderItemsData = [];
+      for (const item of orderRequest.items) {
+        const [menuItem] = await db
+          .select()
+          .from(menuItems)
+          .where(eq(menuItems.id, item.menuItemId))
+          .limit(1);
+
+        orderItemsData.push({
+          id: crypto.randomUUID(),
+          orderId: orderId,
+          menuItemId: item.menuItemId,
+          quantity: item.quantity,
+          unitPrice: menuItem.price,
+          totalPrice: (parseFloat(menuItem.price) * item.quantity).toString(),
+          customizations: item.customizations,
+          specialInstructions: item.specialInstructions,
+        });
       }
 
-      // Calculate order totals
-      let subtotal = 0;
-      const orderItems: OrderItem[] = orderData.items.map(item => {
-        const dish = dishesData.find(d => d.id === item.dishId);
-        if (!dish) {
-          throw new Error(`Dish ${item.dishId} not found`);
-        }
-        
-        const itemTotal = Number(dish.price) * item.quantity;
-        subtotal += itemTotal;
+      await db.insert(orderItems).values(orderItemsData);
 
-        return {
-          ...item,
-          price: Number(dish.price),
-          dishName: dish.name,
-          dishImage: dish.images ? (dish.images as string[])[0] : undefined,
-        };
-      });
-
-      const deliveryFee = Number(restaurant.deliveryFee) || 0;
-      const tax = subtotal * 0.18; // 18% GST
-      const discount = 0; // Can be calculated based on coupons/promotions
-      const totalAmount = subtotal + deliveryFee + tax - discount;
-
-      // Create the order
-      const [newOrder] = await db.insert(orders).values({
-        id: uuidv4(),
-        orderNumber,
-        userId: orderData.userId,
-        restaurantId: orderData.restaurantId,
-        status: 'pending',
-        items: orderItems,
-        subtotal: subtotal.toFixed(2),
-        deliveryFee: deliveryFee.toFixed(2),
-        tax: tax.toFixed(2),
-        discount: discount.toFixed(2),
-        totalAmount: totalAmount.toFixed(2),
-        currency: 'INR',
-        deliveryAddress: orderData.deliveryAddress,
-        deliveryInstructions: orderData.deliveryInstructions,
-        estimatedDeliveryTime: new Date(Date.now() + restaurant.estimatedDeliveryTime * 60 * 1000),
-        createdAt: new Date(),
-        updatedAt: new Date(),
-      }).returning();
-
-      // Get full order details
-      const orderWithDetails = await this.getOrderById(newOrder.id);
-      if (!orderWithDetails) {
-        throw new Error('Failed to retrieve created order');
-      }
-
-      // Send notification to restaurant
-      await this.sendOrderNotification(newOrder.id, 'new_order');
-
-      return { order: orderWithDetails, orderNumber };
-    } catch (error) {
-      console.error('Error creating order:', error);
-      throw error;
-    }
-  }
-
-  /**
-   * Get order by ID with full details
-   */
-  async getOrderById(orderId: string): Promise<OrderWithDetails | null> {
-    try {
-      const order = await db.query.orders.findFirst({
-        where: eq(orders.id, orderId),
-        with: {
-          restaurant: {
-            columns: { id: true, name: true, logo: true, phone: true },
-          },
-          user: {
-            columns: { id: true, name: true, phone: true, email: true },
-          },
-          deliveryPartner: {
-            columns: { id: true, name: true, phone: true },
-          },
+      // Create payment order
+      const paymentOrder = await this.paymentService.createOrder({
+        amount: calculation.totalAmount,
+        orderId: orderId,
+        userId: orderRequest.userId,
+        description: `Order from ${restaurant.name}`,
+        metadata: {
+          restaurantId: orderRequest.restaurantId,
+          restaurantName: restaurant.name,
+          itemCount: orderRequest.items.length,
         },
       });
 
-      return order as OrderWithDetails | null;
+      // Return order with payment details
+      return {
+        order: {
+          ...order,
+          items: orderItemsData,
+          restaurant: {
+            id: restaurant.id,
+            name: restaurant.name,
+            image: restaurant.image,
+          },
+          calculation,
+        },
+        payment: paymentOrder,
+      };
     } catch (error) {
-      console.error('Error fetching order:', error);
-      return null;
+      console.error('Error creating order:', error);
+      throw new Error('Failed to create order');
     }
   }
 
-  /**
-   * Update order status
-   */
-  async updateOrderStatus(orderId: string, newStatus: string, updateData?: Partial<{
-    deliveryPartnerId: string;
-    actualDeliveryTime: Date;
-    estimatedDeliveryTime: Date;
-  }>): Promise<OrderWithDetails | null> {
+  // Confirm order after payment
+  async confirmOrder(orderId: string, paymentDetails: any): Promise<any> {
     try {
-      const updatePayload: any = {
-        status: newStatus,
-        updatedAt: new Date(),
-        ...updateData,
-      };
-
-      if (newStatus === 'delivered' && !updateData?.actualDeliveryTime) {
-        updatePayload.actualDeliveryTime = new Date();
-      }
-
-      const [updatedOrder] = await db
+      // Update order status
+      const [order] = await db
         .update(orders)
-        .set(updatePayload)
+        .set({
+          status: 'confirmed',
+          paymentStatus: 'completed',
+          updatedAt: new Date(),
+        })
         .where(eq(orders.id, orderId))
         .returning();
 
-      if (!updatedOrder) {
+      if (!order) {
         throw new Error('Order not found');
       }
 
-      // Send status update notification
-      await this.sendOrderNotification(orderId, 'status_update', { status: newStatus });
-
-      return await this.getOrderById(orderId);
-    } catch (error) {
-      console.error('Error updating order status:', error);
-      throw error;
-    }
-  }
-
-  /**
-   * Get orders for a user
-   */
-  async getUserOrders(userId: string, limit = 20, offset = 0): Promise<{
-    orders: OrderWithDetails[];
-    total: number;
-  }> {
-    try {
-      const [ordersList, [{ count }]] = await Promise.all([
-        db.query.orders.findMany({
-          where: eq(orders.userId, userId),
-          with: {
-            restaurant: {
-              columns: { id: true, name: true, logo: true, phone: true },
-            },
-          },
-          orderBy: desc(orders.createdAt),
-          limit,
-          offset,
-        }),
-        db
-          .select({ count: sql<number>`count(*)` })
-          .from(orders)
-          .where(eq(orders.userId, userId)),
-      ]);
-
-      return {
-        orders: ordersList as OrderWithDetails[],
-        total: count || 0,
-      };
-    } catch (error) {
-      console.error('Error fetching user orders:', error);
-      return { orders: [], total: 0 };
-    }
-  }
-
-  /**
-   * Get orders for a restaurant
-   */
-  async getRestaurantOrders(restaurantId: string, status?: string, limit = 20, offset = 0): Promise<{
-    orders: OrderWithDetails[];
-    total: number;
-  }> {
-    try {
-      const whereCondition = status 
-        ? and(eq(orders.restaurantId, restaurantId), eq(orders.status, status))
-        : eq(orders.restaurantId, restaurantId);
-
-      const [ordersList, [{ count }]] = await Promise.all([
-        db.query.orders.findMany({
-          where: whereCondition,
-          with: {
-            user: {
-              columns: { id: true, name: true, phone: true, email: true },
-            },
-            deliveryPartner: {
-              columns: { id: true, name: true, phone: true },
-            },
-          },
-          orderBy: desc(orders.createdAt),
-          limit,
-          offset,
-        }),
-        db
-          .select({ count: sql<number>`count(*)` })
-          .from(orders)
-          .where(whereCondition),
-      ]);
-
-      return {
-        orders: ordersList as OrderWithDetails[],
-        total: count || 0,
-      };
-    } catch (error) {
-      console.error('Error fetching restaurant orders:', error);
-      return { orders: [], total: 0 };
-    }
-  }
-
-  /**
-   * Get orders for delivery partner
-   */
-  async getDeliveryPartnerOrders(deliveryPartnerId: string, status?: string): Promise<OrderWithDetails[]> {
-    try {
-      const whereCondition = status
-        ? and(eq(orders.deliveryPartnerId, deliveryPartnerId), eq(orders.status, status))
-        : eq(orders.deliveryPartnerId, deliveryPartnerId);
-
-      const ordersList = await db.query.orders.findMany({
-        where: whereCondition,
-        with: {
-          restaurant: {
-            columns: { id: true, name: true, logo: true, phone: true },
-          },
-          user: {
-            columns: { id: true, name: true, phone: true },
-          },
-        },
-        orderBy: desc(orders.createdAt),
+      // Notify restaurant
+      this.wsService.broadcastUpdate(`restaurant_${order.restaurantId}`, {
+        type: 'new_order',
+        orderId: orderId,
+        order: order,
       });
 
-      return ordersList as OrderWithDetails[];
+      // Send confirmation notification to user
+      await pushNotificationService.sendOrderNotification(
+        order.userId,
+        orderId,
+        'confirmed'
+      );
+
+      // Auto-assign delivery partner after 5 minutes (simulation)
+      setTimeout(async () => {
+        try {
+          await this.deliveryService.assignOrder(orderId);
+        } catch (error) {
+          console.error('Auto-assignment failed:', error);
+        }
+      }, 5 * 60 * 1000);
+
+      return order;
     } catch (error) {
-      console.error('Error fetching delivery partner orders:', error);
-      return [];
+      console.error('Error confirming order:', error);
+      throw new Error('Failed to confirm order');
     }
   }
 
-  /**
-   * Assign delivery partner to order
-   */
-  async assignDeliveryPartner(orderId: string, deliveryPartnerId: string): Promise<OrderWithDetails | null> {
+  // Update order status
+  async updateOrderStatus(orderId: string, status: string, notes?: string): Promise<any> {
     try {
-      // Verify delivery partner exists and has the right role
-      const deliveryPartner = await db.query.users.findFirst({
-        where: and(
-          eq(users.id, deliveryPartnerId),
-          eq(users.role, 'delivery_partner')
-        ),
-      });
+      const [order] = await db
+        .update(orders)
+        .set({
+          status,
+          updatedAt: new Date(),
+        })
+        .where(eq(orders.id, orderId))
+        .returning();
 
-      if (!deliveryPartner) {
-        throw new Error('Delivery partner not found or invalid role');
+      if (!order) {
+        throw new Error('Order not found');
       }
 
-      return await this.updateOrderStatus(orderId, 'picked_up', {
-        deliveryPartnerId,
+      // Broadcast update to all relevant parties
+      this.wsService.broadcastUpdate(`order_${orderId}`, {
+        type: 'status_update',
+        orderId: orderId,
+        status: status,
+        timestamp: new Date(),
+        notes: notes,
       });
+
+      // Send notification to user
+      await pushNotificationService.sendOrderNotification(
+        order.userId,
+        orderId,
+        status
+      );
+
+      // If order is ready, notify delivery partner
+      if (status === 'ready_for_pickup') {
+        this.wsService.broadcastUpdate(`delivery_partner_${order.deliveryPartnerId}`, {
+          type: 'order_ready',
+          orderId: orderId,
+          order: order,
+        });
+      }
+
+      return order;
     } catch (error) {
-      console.error('Error assigning delivery partner:', error);
-      throw error;
+      console.error('Error updating order status:', error);
+      throw new Error('Failed to update order status');
     }
   }
 
-  /**
-   * Cancel order
-   */
-  async cancelOrder(orderId: string, reason?: string): Promise<OrderWithDetails | null> {
+  // Cancel order
+  async cancelOrder(orderId: string, reason: string, cancelledBy: 'user' | 'restaurant' | 'admin'): Promise<any> {
     try {
-      const order = await this.getOrderById(orderId);
+      const [order] = await db
+        .select()
+        .from(orders)
+        .where(eq(orders.id, orderId))
+        .limit(1);
+
       if (!order) {
         throw new Error('Order not found');
       }
 
       // Check if order can be cancelled
-      const cancellableStatuses = ['pending', 'confirmed', 'preparing'];
+      const cancellableStatuses = ['pending_payment', 'confirmed', 'preparing'];
       if (!cancellableStatuses.includes(order.status)) {
-        throw new Error(`Cannot cancel order in ${order.status} status`);
+        throw new Error('Order cannot be cancelled at this stage');
       }
 
-      return await this.updateOrderStatus(orderId, 'cancelled');
+      // Update order status
+      await db
+        .update(orders)
+        .set({
+          status: 'cancelled',
+          updatedAt: new Date(),
+        })
+        .where(eq(orders.id, orderId));
+
+      // Process refund if payment was completed
+      if (order.paymentStatus === 'completed') {
+        // Implement refund logic
+        console.log('Processing refund for order:', orderId);
+      }
+
+      // Notify all parties
+      this.wsService.broadcastUpdate(`order_${orderId}`, {
+        type: 'order_cancelled',
+        orderId: orderId,
+        reason: reason,
+        cancelledBy: cancelledBy,
+        timestamp: new Date(),
+      });
+
+      // Send notification to user
+      await pushNotificationService.sendOrderNotification(
+        order.userId,
+        orderId,
+        'cancelled'
+      );
+
+      return { success: true, order };
     } catch (error) {
       console.error('Error cancelling order:', error);
-      throw error;
+      throw new Error('Failed to cancel order');
     }
   }
 
-  /**
-   * Get order analytics for restaurant
-   */
-  async getRestaurantAnalytics(restaurantId: string, days = 30): Promise<{
-    totalOrders: number;
-    totalRevenue: number;
-    averageOrderValue: number;
-    ordersByStatus: Record<string, number>;
-    popularDishes: Array<{ dishId: string; dishName: string; count: number }>;
-  }> {
+  // Get order details
+  async getOrder(orderId: string, userId?: string): Promise<any> {
     try {
-      const startDate = new Date();
-      startDate.setDate(startDate.getDate() - days);
-
-      // Get total orders and revenue
-      const [analytics] = await db
+      const [order] = await db
         .select({
-          totalOrders: sql<number>`count(*)`,
-          totalRevenue: sql<number>`sum(CAST(${orders.totalAmount} AS DECIMAL))`,
-          averageOrderValue: sql<number>`avg(CAST(${orders.totalAmount} AS DECIMAL))`,
-        })
-        .from(orders)
-        .where(
-          and(
-            eq(orders.restaurantId, restaurantId),
-            sql`${orders.createdAt} >= ${startDate}`
-          )
-        );
-
-      // Get orders by status
-      const statusCounts = await db
-        .select({
+          id: orders.id,
           status: orders.status,
-          count: sql<number>`count(*)`,
+          totalAmount: orders.totalAmount,
+          deliveryFee: orders.deliveryFee,
+          platformFee: orders.platformFee,
+          taxes: orders.taxes,
+          discountAmount: orders.discountAmount,
+          deliveryAddress: orders.deliveryAddress,
+          paymentMethod: orders.paymentMethod,
+          paymentStatus: orders.paymentStatus,
+          notes: orders.notes,
+          estimatedDeliveryTime: orders.estimatedDeliveryTime,
+          actualDeliveryTime: orders.actualDeliveryTime,
+          createdAt: orders.createdAt,
+          restaurant: {
+            id: restaurants.id,
+            name: restaurants.name,
+            image: restaurants.image,
+            phone: restaurants.phone,
+          },
+          user: {
+            id: users.id,
+            name: users.name,
+            phone: users.phone,
+          },
         })
         .from(orders)
+        .leftJoin(restaurants, eq(orders.restaurantId, restaurants.id))
+        .leftJoin(users, eq(orders.userId, users.id))
         .where(
-          and(
-            eq(orders.restaurantId, restaurantId),
-            sql`${orders.createdAt} >= ${startDate}`
-          )
+          userId 
+            ? and(eq(orders.id, orderId), eq(orders.userId, userId))
+            : eq(orders.id, orderId)
         )
-        .groupBy(orders.status);
+        .limit(1);
 
-      const ordersByStatus = statusCounts.reduce((acc, { status, count }) => {
-        acc[status] = count;
-        return acc;
-      }, {} as Record<string, number>);
+      if (!order) {
+        throw new Error('Order not found');
+      }
 
-      // TODO: Calculate popular dishes from order items
-      const popularDishes: Array<{ dishId: string; dishName: string; count: number }> = [];
+      // Get order items
+      const items = await db
+        .select({
+          id: orderItems.id,
+          quantity: orderItems.quantity,
+          unitPrice: orderItems.unitPrice,
+          totalPrice: orderItems.totalPrice,
+          customizations: orderItems.customizations,
+          specialInstructions: orderItems.specialInstructions,
+          menuItem: {
+            id: menuItems.id,
+            name: menuItems.name,
+            image: menuItems.image,
+            category: menuItems.category,
+          },
+        })
+        .from(orderItems)
+        .leftJoin(menuItems, eq(orderItems.menuItemId, menuItems.id))
+        .where(eq(orderItems.orderId, orderId));
 
       return {
-        totalOrders: analytics?.totalOrders || 0,
-        totalRevenue: Number(analytics?.totalRevenue) || 0,
-        averageOrderValue: Number(analytics?.averageOrderValue) || 0,
-        ordersByStatus,
-        popularDishes,
+        ...order,
+        items,
       };
     } catch (error) {
-      console.error('Error fetching restaurant analytics:', error);
-      return {
-        totalOrders: 0,
-        totalRevenue: 0,
-        averageOrderValue: 0,
-        ordersByStatus: {},
-        popularDishes: [],
-      };
+      console.error('Error fetching order:', error);
+      throw new Error('Failed to fetch order');
     }
   }
 
-  /**
-   * Send order notification
-   */
-  private async sendOrderNotification(orderId: string, type: 'new_order' | 'status_update', data?: any) {
+  // Get user orders
+  async getUserOrders(userId: string, page: number = 1, limit: number = 20): Promise<any> {
     try {
-      const order = await this.getOrderById(orderId);
-      if (!order) return;
+      const offset = (page - 1) * limit;
 
-      let title: string;
-      let message: string;
-      let recipients: string[] = [];
+      const userOrders = await db
+        .select({
+          id: orders.id,
+          status: orders.status,
+          totalAmount: orders.totalAmount,
+          createdAt: orders.createdAt,
+          estimatedDeliveryTime: orders.estimatedDeliveryTime,
+          restaurant: {
+            id: restaurants.id,
+            name: restaurants.name,
+            image: restaurants.image,
+            cuisine: restaurants.cuisineType,
+          },
+        })
+        .from(orders)
+        .leftJoin(restaurants, eq(orders.restaurantId, restaurants.id))
+        .where(eq(orders.userId, userId))
+        .orderBy(desc(orders.createdAt))
+        .limit(limit)
+        .offset(offset);
 
-      switch (type) {
-        case 'new_order':
-          title = 'New Order Received';
-          message = `Order #${order.orderNumber} for ₹${order.totalAmount}`;
-          recipients = [order.restaurant?.id || '']; // Notify restaurant owner
-          break;
-        case 'status_update':
-          title = 'Order Status Updated';
-          message = `Your order #${order.orderNumber} is now ${data?.status || order.status}`;
-          recipients = [order.userId]; // Notify customer
-          break;
-      }
-
-      // Insert notifications for recipients
-      if (recipients.length > 0) {
-        await db.insert(notifications).values(
-          recipients.map(userId => ({
-            id: uuidv4(),
-            userId,
-            type: type === 'new_order' ? 'order_created' : 'order_status_updated',
-            title,
-            message,
-            metadata: { orderId: order.id, orderNumber: order.orderNumber },
-            createdAt: new Date(),
-            updatedAt: new Date(),
-          }))
-        );
-      }
+      return userOrders;
     } catch (error) {
-      console.error('Error sending order notification:', error);
+      console.error('Error fetching user orders:', error);
+      throw new Error('Failed to fetch user orders');
     }
+  }
+
+  // Private helper methods
+  private async validateOrderRequest(orderRequest: OrderRequest): Promise<void> {
+    // Check if restaurant exists and is active
+    const [restaurant] = await db
+      .select()
+      .from(restaurants)
+      .where(and(
+        eq(restaurants.id, orderRequest.restaurantId),
+        eq(restaurants.isActive, true)
+      ))
+      .limit(1);
+
+    if (!restaurant) {
+      throw new Error('Restaurant not found or inactive');
+    }
+
+    // Validate all menu items
+    for (const item of orderRequest.items) {
+      const [menuItem] = await db
+        .select()
+        .from(menuItems)
+        .where(and(
+          eq(menuItems.id, item.menuItemId),
+          eq(menuItems.restaurantId, orderRequest.restaurantId),
+          eq(menuItems.isAvailable, true)
+        ))
+        .limit(1);
+
+      if (!menuItem) {
+        throw new Error(`Menu item ${item.menuItemId} not found or unavailable`);
+      }
+
+      if (item.quantity <= 0) {
+        throw new Error('Invalid quantity');
+      }
+    }
+  }
+
+  private calculateDeliveryFee(subtotal: number, deliveryAddress: any): number {
+    const baseDeliveryFee = parseFloat(process.env.DELIVERY_FEE || '40');
+    
+    // Free delivery for orders above certain amount
+    if (subtotal >= 500) {
+      return 0;
+    }
+
+    // Distance-based delivery fee (simplified)
+    // In production, calculate actual distance to restaurant
+    return baseDeliveryFee;
   }
 }
-
-export const orderService = new OrderService();
-export default orderService;

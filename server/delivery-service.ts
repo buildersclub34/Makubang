@@ -1,567 +1,409 @@
 
 import { db } from './db';
-import { orders, users, notifications } from '../shared/schema';
-import { eq, and, sql, inArray } from 'drizzle-orm';
-import { v4 as uuidv4 } from 'uuid';
-
-export interface DeliveryPartner {
-  id: string;
-  name: string;
-  phone?: string;
-  email: string;
-  profilePicture?: string;
-  rating: number;
-  totalDeliveries: number;
-  isAvailable: boolean;
-  currentLocation?: {
-    latitude: number;
-    longitude: number;
-    timestamp: Date;
-  };
-  vehicleInfo?: {
-    type: string; // bike, car, bicycle
-    number: string;
-    color?: string;
-  };
-}
+import { orders, deliveryPartners, users } from '../shared/schema';
+import { eq, and, inArray } from 'drizzle-orm';
+import { WebSocketService } from './websocket';
 
 export interface DeliveryAssignment {
   orderId: string;
-  deliveryPartnerId: string;
-  assignedAt: Date;
-  acceptedAt?: Date;
-  pickedUpAt?: Date;
-  deliveredAt?: Date;
-  status: 'assigned' | 'accepted' | 'picked_up' | 'out_for_delivery' | 'delivered' | 'cancelled';
-  estimatedDeliveryTime?: Date;
-  actualDeliveryTime?: Date;
-  location?: {
-    latitude: number;
-    longitude: number;
-    timestamp: Date;
+  partnerId: string;
+  estimatedTime: number;
+  pickupLocation: {
+    lat: number;
+    lng: number;
+    address: string;
+  };
+  dropLocation: {
+    lat: number;
+    lng: number;
+    address: string;
   };
 }
 
-export interface DeliveryTracking {
+export interface DeliveryUpdate {
   orderId: string;
-  deliveryPartner: DeliveryPartner;
-  status: string;
-  estimatedTime: number; // minutes
-  currentLocation?: {
-    latitude: number;
-    longitude: number;
+  status: 'assigned' | 'picked_up' | 'in_transit' | 'delivered' | 'cancelled';
+  location?: {
+    lat: number;
+    lng: number;
   };
-  deliveryAddress: {
-    street: string;
-    city: string;
-    coordinates?: {
-      latitude: number;
-      longitude: number;
-    };
-  };
-  timeline: Array<{
-    status: string;
-    timestamp: Date;
-    description: string;
-  }>;
+  estimatedTime?: number;
+  notes?: string;
 }
 
-class DeliveryService {
-  private activeDeliveries = new Map<string, DeliveryAssignment>();
-  private partnerLocations = new Map<string, { lat: number; lng: number; timestamp: Date }>();
+export class DeliveryService {
+  private wsService: WebSocketService;
+  private apiBaseUrl: string;
+  private apiKey: string;
 
-  /**
-   * Get available delivery partners near a location
-   */
-  async getAvailablePartners(
-    restaurantLocation: { latitude: number; longitude: number },
-    radius = 10 // km
-  ): Promise<DeliveryPartner[]> {
+  constructor(wsService: WebSocketService) {
+    this.wsService = wsService;
+    this.apiBaseUrl = process.env.DELIVERY_APP_API_URL || 'http://localhost:3001/api';
+    this.apiKey = process.env.DELIVERY_APP_API_KEY || 'demo-key';
+  }
+
+  // Find available delivery partners near restaurant
+  async findAvailablePartners(restaurantLocation: { lat: number; lng: number }, radius: number = 5) {
     try {
-      // Get all active delivery partners
-      const partners = await db.query.users.findMany({
-        where: and(
-          eq(users.role, 'delivery_partner'),
-          eq(users.isVerified, true)
-        ),
-        columns: {
-          id: true,
-          name: true,
-          phone: true,
-          email: true,
-          profilePicture: true,
-        },
+      const availablePartners = await db
+        .select({
+          id: deliveryPartners.id,
+          userId: deliveryPartners.userId,
+          vehicleType: deliveryPartners.vehicleType,
+          rating: deliveryPartners.rating,
+          currentLocation: deliveryPartners.currentLocation,
+          name: users.name,
+          phone: users.phone,
+        })
+        .from(deliveryPartners)
+        .leftJoin(users, eq(deliveryPartners.userId, users.id))
+        .where(
+          and(
+            eq(deliveryPartners.isAvailable, true),
+            eq(deliveryPartners.status, 'active'),
+            eq(deliveryPartners.isVerified, true)
+          )
+        );
+
+      // Filter by distance (simplified - in production use proper geospatial queries)
+      const nearbyPartners = availablePartners.filter(partner => {
+        if (!partner.currentLocation) return false;
+        
+        const location = JSON.parse(partner.currentLocation as string);
+        const distance = this.calculateDistance(
+          restaurantLocation.lat,
+          restaurantLocation.lng,
+          location.lat,
+          location.lng
+        );
+        
+        return distance <= radius;
       });
 
-      // Filter by availability and location (simplified - in production use geospatial queries)
-      const availablePartners: DeliveryPartner[] = partners.map(partner => ({
-        id: partner.id,
-        name: partner.name,
-        phone: partner.phone || undefined,
-        email: partner.email,
-        profilePicture: partner.profilePicture || undefined,
-        rating: 4.5, // TODO: Calculate from actual ratings
-        totalDeliveries: 0, // TODO: Calculate from order history
-        isAvailable: true, // TODO: Check actual availability
-        currentLocation: this.partnerLocations.get(partner.id) 
-          ? {
-              latitude: this.partnerLocations.get(partner.id)!.lat,
-              longitude: this.partnerLocations.get(partner.id)!.lng,
-              timestamp: this.partnerLocations.get(partner.id)!.timestamp,
-            }
-          : undefined,
-      }));
-
-      return availablePartners;
+      return nearbyPartners.sort((a, b) => parseFloat(b.rating || '0') - parseFloat(a.rating || '0'));
     } catch (error) {
-      console.error('Error fetching available partners:', error);
-      return [];
+      console.error('Error finding available partners:', error);
+      throw new Error('Failed to find delivery partners');
     }
   }
 
-  /**
-   * Assign delivery partner to order
-   */
-  async assignOrder(orderId: string, deliveryPartnerId?: string): Promise<DeliveryAssignment | null> {
+  // Assign order to delivery partner
+  async assignOrder(orderId: string, preferredPartnerId?: string): Promise<DeliveryAssignment> {
     try {
-      const order = await db.query.orders.findFirst({
-        where: eq(orders.id, orderId),
-        with: {
-          restaurant: true,
-        },
-      });
+      const [order] = await db
+        .select()
+        .from(orders)
+        .where(eq(orders.id, orderId))
+        .limit(1);
 
       if (!order) {
         throw new Error('Order not found');
       }
 
-      let partnerId = deliveryPartnerId;
+      const pickupLocation = JSON.parse(order.pickupAddress as string);
+      const dropLocation = JSON.parse(order.deliveryAddress as string);
 
-      // If no specific partner provided, find the best available one
-      if (!partnerId) {
-        const restaurantLocation = order.restaurant?.address as any;
-        if (restaurantLocation?.coordinates) {
-          const availablePartners = await this.getAvailablePartners(
-            restaurantLocation.coordinates
-          );
-          
-          if (availablePartners.length === 0) {
-            throw new Error('No available delivery partners');
-          }
+      let selectedPartner;
 
-          // Select partner with highest rating and lowest current workload
-          partnerId = availablePartners[0].id;
-        } else {
-          throw new Error('Restaurant location not available');
-        }
+      if (preferredPartnerId) {
+        // Try to assign to preferred partner
+        const [partner] = await db
+          .select()
+          .from(deliveryPartners)
+          .where(
+            and(
+              eq(deliveryPartners.id, preferredPartnerId),
+              eq(deliveryPartners.isAvailable, true),
+              eq(deliveryPartners.status, 'active')
+            )
+          )
+          .limit(1);
+        
+        selectedPartner = partner;
       }
+
+      if (!selectedPartner) {
+        // Find best available partner
+        const availablePartners = await this.findAvailablePartners(pickupLocation);
+        if (availablePartners.length === 0) {
+          throw new Error('No delivery partners available');
+        }
+        selectedPartner = availablePartners[0];
+      }
+
+      // Calculate estimated delivery time
+      const estimatedTime = this.calculateEstimatedTime(pickupLocation, dropLocation);
 
       // Update order with delivery partner
       await db
         .update(orders)
         .set({
-          deliveryPartnerId: partnerId,
-          status: 'ready',
+          deliveryPartnerId: selectedPartner.userId,
+          status: 'assigned_to_delivery',
+          estimatedDeliveryTime: new Date(Date.now() + estimatedTime * 60000),
           updatedAt: new Date(),
         })
         .where(eq(orders.id, orderId));
 
-      // Create delivery assignment
+      // Mark delivery partner as busy
+      await db
+        .update(deliveryPartners)
+        .set({
+          isAvailable: false,
+          updatedAt: new Date(),
+        })
+        .where(eq(deliveryPartners.id, selectedPartner.id));
+
       const assignment: DeliveryAssignment = {
         orderId,
-        deliveryPartnerId: partnerId,
-        assignedAt: new Date(),
-        status: 'assigned',
+        partnerId: selectedPartner.id,
+        estimatedTime,
+        pickupLocation,
+        dropLocation,
       };
 
-      this.activeDeliveries.set(orderId, assignment);
+      // Notify delivery partner through external API
+      await this.notifyDeliveryPartner(assignment);
 
-      // Send notification to delivery partner
-      await this.notifyDeliveryPartner(partnerId, 'new_assignment', {
+      // Broadcast update to all relevant parties
+      this.wsService.broadcastUpdate(`order_${orderId}`, {
+        type: 'delivery_assigned',
         orderId,
-        orderNumber: order.orderNumber,
+        partnerId: selectedPartner.id,
+        estimatedTime,
       });
 
       return assignment;
     } catch (error) {
-      console.error('Error assigning delivery partner:', error);
-      throw error;
+      console.error('Error assigning order:', error);
+      throw new Error('Failed to assign delivery partner');
     }
   }
 
-  /**
-   * Accept delivery assignment
-   */
-  async acceptDelivery(orderId: string, deliveryPartnerId: string): Promise<boolean> {
+  // Update delivery status
+  async updateDeliveryStatus(update: DeliveryUpdate) {
     try {
-      const assignment = this.activeDeliveries.get(orderId);
-      if (!assignment || assignment.deliveryPartnerId !== deliveryPartnerId) {
-        throw new Error('Invalid delivery assignment');
-      }
+      const trackingData = {
+        status: update.status,
+        location: update.location,
+        timestamp: new Date(),
+        notes: update.notes,
+      };
 
-      // Update assignment
-      assignment.status = 'accepted';
-      assignment.acceptedAt = new Date();
-      this.activeDeliveries.set(orderId, assignment);
-
-      // Update order status
-      await db
+      // Update order status and tracking data
+      const [order] = await db
         .update(orders)
         .set({
-          status: 'confirmed',
+          status: this.mapDeliveryStatusToOrderStatus(update.status),
+          trackingData: trackingData,
+          actualDeliveryTime: update.status === 'delivered' ? new Date() : undefined,
           updatedAt: new Date(),
         })
-        .where(eq(orders.id, orderId));
+        .where(eq(orders.id, update.orderId))
+        .returning();
+
+      if (!order) {
+        throw new Error('Order not found');
+      }
+
+      // If delivered, mark delivery partner as available
+      if (update.status === 'delivered' || update.status === 'cancelled') {
+        if (order.deliveryPartnerId) {
+          await db
+            .update(deliveryPartners)
+            .set({
+              isAvailable: true,
+              totalDeliveries: update.status === 'delivered' ? 
+                db.select().from(deliveryPartners).where(eq(deliveryPartners.userId, order.deliveryPartnerId)) as any : 
+                undefined,
+              updatedAt: new Date(),
+            })
+            .where(eq(deliveryPartners.userId, order.deliveryPartnerId));
+        }
+      }
+
+      // Broadcast update to all relevant parties
+      this.wsService.broadcastUpdate(`order_${update.orderId}`, {
+        type: 'delivery_status_update',
+        orderId: update.orderId,
+        status: update.status,
+        location: update.location,
+        timestamp: new Date(),
+      });
 
       // Notify customer
-      await this.notifyCustomer(orderId, 'delivery_assigned');
+      this.wsService.broadcastUpdate(`user_${order.userId}`, {
+        type: 'order_update',
+        orderId: update.orderId,
+        status: update.status,
+        message: this.getStatusMessage(update.status),
+      });
 
-      return true;
-    } catch (error) {
-      console.error('Error accepting delivery:', error);
-      return false;
-    }
-  }
-
-  /**
-   * Update delivery status
-   */
-  async updateDeliveryStatus(
-    orderId: string,
-    deliveryPartnerId: string,
-    status: DeliveryAssignment['status'],
-    location?: { latitude: number; longitude: number }
-  ): Promise<boolean> {
-    try {
-      const assignment = this.activeDeliveries.get(orderId);
-      if (!assignment || assignment.deliveryPartnerId !== deliveryPartnerId) {
-        throw new Error('Invalid delivery assignment');
-      }
-
-      // Update assignment
-      assignment.status = status;
-      assignment.location = location ? {
-        latitude: location.latitude,
-        longitude: location.longitude,
-        timestamp: new Date(),
-      } : assignment.location;
-
-      // Update specific timestamps
-      switch (status) {
-        case 'picked_up':
-          assignment.pickedUpAt = new Date();
-          break;
-        case 'delivered':
-          assignment.deliveredAt = new Date();
-          assignment.actualDeliveryTime = new Date();
-          break;
-      }
-
-      this.activeDeliveries.set(orderId, assignment);
-
-      // Update partner location
-      if (location) {
-        this.partnerLocations.set(deliveryPartnerId, {
-          lat: location.latitude,
-          lng: location.longitude,
-          timestamp: new Date(),
-        });
-      }
-
-      // Update order status
-      let orderStatus = status;
-      if (status === 'picked_up') orderStatus = 'out_for_delivery';
-      if (status === 'delivered') orderStatus = 'delivered';
-
-      await db
-        .update(orders)
-        .set({
-          status: orderStatus,
-          actualDeliveryTime: status === 'delivered' ? new Date() : undefined,
-          updatedAt: new Date(),
-        })
-        .where(eq(orders.id, orderId));
-
-      // Notify customer of status updates
-      await this.notifyCustomer(orderId, 'status_update', { status: orderStatus });
-
-      // Remove from active deliveries if completed
-      if (status === 'delivered' || status === 'cancelled') {
-        this.activeDeliveries.delete(orderId);
-      }
-
-      return true;
+      return { success: true, order };
     } catch (error) {
       console.error('Error updating delivery status:', error);
-      return false;
+      throw new Error('Failed to update delivery status');
     }
   }
 
-  /**
-   * Get delivery tracking information
-   */
-  async getDeliveryTracking(orderId: string): Promise<DeliveryTracking | null> {
+  // Get available orders for delivery partners
+  async getAvailableOrders(partnerId?: string) {
     try {
-      const order = await db.query.orders.findFirst({
-        where: eq(orders.id, orderId),
-        with: {
-          deliveryPartner: {
-            columns: {
-              id: true,
-              name: true,
-              phone: true,
-              email: true,
-              profilePicture: true,
-            },
-          },
-        },
-      });
+      const availableOrders = await db
+        .select({
+          id: orders.id,
+          restaurantId: orders.restaurantId,
+          totalAmount: orders.totalAmount,
+          deliveryFee: orders.deliveryFee,
+          pickupAddress: orders.pickupAddress,
+          deliveryAddress: orders.deliveryAddress,
+          estimatedDeliveryTime: orders.estimatedDeliveryTime,
+          createdAt: orders.createdAt,
+        })
+        .from(orders)
+        .where(
+          and(
+            eq(orders.status, 'confirmed'),
+            eq(orders.deliveryPartnerId, null as any)
+          )
+        );
 
-      if (!order || !order.deliveryPartner) {
-        return null;
+      return availableOrders;
+    } catch (error) {
+      console.error('Error fetching available orders:', error);
+      throw new Error('Failed to fetch available orders');
+    }
+  }
+
+  // Accept order by delivery partner
+  async acceptOrder(orderId: string, partnerId: string) {
+    try {
+      const [partner] = await db
+        .select()
+        .from(deliveryPartners)
+        .where(eq(deliveryPartners.id, partnerId))
+        .limit(1);
+
+      if (!partner) {
+        throw new Error('Delivery partner not found');
       }
 
-      const assignment = this.activeDeliveries.get(orderId);
-      const partnerLocation = this.partnerLocations.get(order.deliveryPartner.id);
-
-      // Build timeline
-      const timeline = [];
-      timeline.push({
-        status: 'confirmed',
-        timestamp: order.createdAt,
-        description: 'Order confirmed by restaurant',
-      });
-
-      if (assignment?.acceptedAt) {
-        timeline.push({
-          status: 'accepted',
-          timestamp: assignment.acceptedAt,
-          description: 'Delivery partner assigned',
-        });
-      }
-
-      if (assignment?.pickedUpAt) {
-        timeline.push({
-          status: 'picked_up',
-          timestamp: assignment.pickedUpAt,
-          description: 'Order picked up from restaurant',
-        });
-      }
-
-      if (assignment?.deliveredAt) {
-        timeline.push({
-          status: 'delivered',
-          timestamp: assignment.deliveredAt,
-          description: 'Order delivered successfully',
-        });
-      }
-
+      const assignment = await this.assignOrder(orderId, partnerId);
+      
       return {
-        orderId,
-        deliveryPartner: {
-          id: order.deliveryPartner.id,
-          name: order.deliveryPartner.name,
-          phone: order.deliveryPartner.phone || undefined,
-          email: order.deliveryPartner.email,
-          profilePicture: order.deliveryPartner.profilePicture || undefined,
-          rating: 4.5, // TODO: Calculate from actual ratings
-          totalDeliveries: 0, // TODO: Calculate from order history
-          isAvailable: true,
-        },
-        status: order.status,
-        estimatedTime: this.calculateEstimatedTime(order),
-        currentLocation: partnerLocation ? {
-          latitude: partnerLocation.lat,
-          longitude: partnerLocation.lng,
-        } : undefined,
-        deliveryAddress: order.deliveryAddress as any,
-        timeline,
+        success: true,
+        assignment,
+        message: 'Order assigned successfully',
       };
     } catch (error) {
-      console.error('Error getting delivery tracking:', error);
-      return null;
+      console.error('Error accepting order:', error);
+      throw new Error('Failed to accept order');
     }
   }
 
-  /**
-   * Get delivery partner dashboard data
-   */
-  async getPartnerDashboard(deliveryPartnerId: string): Promise<{
-    todayEarnings: number;
-    todayDeliveries: number;
-    activeOrders: Array<{
-      id: string;
-      orderNumber: string;
-      restaurant: string;
-      customerName: string;
-      customerAddress: string;
-      status: string;
-      estimatedTime: number;
-    }>;
-    completedOrders: number;
-    rating: number;
-  }> {
+  // Track order in real-time
+  async trackOrder(orderId: string) {
     try {
-      const today = new Date();
-      today.setHours(0, 0, 0, 0);
-
-      // Get today's deliveries
-      const todayOrders = await db.query.orders.findMany({
-        where: and(
-          eq(orders.deliveryPartnerId, deliveryPartnerId),
-          sql`${orders.createdAt} >= ${today}`
-        ),
-        with: {
-          restaurant: {
-            columns: { name: true },
+      const [order] = await db
+        .select({
+          id: orders.id,
+          status: orders.status,
+          trackingData: orders.trackingData,
+          estimatedDeliveryTime: orders.estimatedDeliveryTime,
+          actualDeliveryTime: orders.actualDeliveryTime,
+          deliveryPartnerId: orders.deliveryPartnerId,
+          partner: {
+            id: deliveryPartners.id,
+            vehicleType: deliveryPartners.vehicleType,
+            vehicleNumber: deliveryPartners.vehicleNumber,
+            currentLocation: deliveryPartners.currentLocation,
+            name: users.name,
+            phone: users.phone,
           },
-          user: {
-            columns: { name: true },
-          },
-        },
-      });
+        })
+        .from(orders)
+        .leftJoin(deliveryPartners, eq(orders.deliveryPartnerId, deliveryPartners.userId))
+        .leftJoin(users, eq(deliveryPartners.userId, users.id))
+        .where(eq(orders.id, orderId))
+        .limit(1);
 
-      // Get active orders
-      const activeOrders = todayOrders
-        .filter(order => ['ready', 'picked_up', 'out_for_delivery'].includes(order.status))
-        .map(order => ({
-          id: order.id,
-          orderNumber: order.orderNumber,
-          restaurant: order.restaurant?.name || 'Unknown',
-          customerName: order.user?.name || 'Unknown',
-          customerAddress: (order.deliveryAddress as any)?.street || 'Unknown',
-          status: order.status,
-          estimatedTime: this.calculateEstimatedTime(order),
-        }));
-
-      const todayEarnings = todayOrders
-        .filter(order => order.status === 'delivered')
-        .reduce((sum, order) => sum + (Number(order.deliveryFee) || 0), 0);
-
-      return {
-        todayEarnings,
-        todayDeliveries: todayOrders.filter(order => order.status === 'delivered').length,
-        activeOrders,
-        completedOrders: todayOrders.filter(order => order.status === 'delivered').length,
-        rating: 4.5, // TODO: Calculate from actual ratings
-      };
-    } catch (error) {
-      console.error('Error fetching partner dashboard:', error);
-      return {
-        todayEarnings: 0,
-        todayDeliveries: 0,
-        activeOrders: [],
-        completedOrders: 0,
-        rating: 0,
-      };
-    }
-  }
-
-  /**
-   * Calculate estimated delivery time
-   */
-  private calculateEstimatedTime(order: any): number {
-    const baseTime = 30; // 30 minutes base
-    const status = order.status;
-
-    switch (status) {
-      case 'ready':
-      case 'confirmed':
-        return baseTime;
-      case 'picked_up':
-      case 'out_for_delivery':
-        return Math.max(10, baseTime - 20); // Reduce time as delivery progresses
-      default:
-        return baseTime;
-    }
-  }
-
-  /**
-   * Notify delivery partner
-   */
-  private async notifyDeliveryPartner(
-    partnerId: string,
-    type: 'new_assignment' | 'order_cancelled',
-    data: any
-  ) {
-    try {
-      let title: string;
-      let message: string;
-
-      switch (type) {
-        case 'new_assignment':
-          title = 'New Delivery Assignment';
-          message = `You have a new delivery for order #${data.orderNumber}`;
-          break;
-        case 'order_cancelled':
-          title = 'Order Cancelled';
-          message = `Order #${data.orderNumber} has been cancelled`;
-          break;
-        default:
-          return;
+      if (!order) {
+        throw new Error('Order not found');
       }
 
-      await db.insert(notifications).values({
-        id: uuidv4(),
-        userId: partnerId,
-        type: 'delivery_assigned',
-        title,
-        message,
-        metadata: data,
-        createdAt: new Date(),
-        updatedAt: new Date(),
+      return order;
+    } catch (error) {
+      console.error('Error tracking order:', error);
+      throw new Error('Failed to track order');
+    }
+  }
+
+  // Private helper methods
+  private async notifyDeliveryPartner(assignment: DeliveryAssignment) {
+    try {
+      // Call external delivery app API
+      const response = await fetch(`${this.apiBaseUrl}/orders/assign`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${this.apiKey}`,
+        },
+        body: JSON.stringify(assignment),
       });
+
+      if (!response.ok) {
+        throw new Error(`API call failed: ${response.statusText}`);
+      }
+
+      return await response.json();
     } catch (error) {
       console.error('Error notifying delivery partner:', error);
+      // Don't throw error, just log it as notification failure shouldn't break assignment
     }
   }
 
-  /**
-   * Notify customer
-   */
-  private async notifyCustomer(
-    orderId: string,
-    type: 'delivery_assigned' | 'status_update',
-    data?: any
-  ) {
-    try {
-      const order = await db.query.orders.findFirst({
-        where: eq(orders.id, orderId),
-      });
+  private calculateDistance(lat1: number, lng1: number, lat2: number, lng2: number): number {
+    const R = 6371; // Radius of the Earth in kilometers
+    const dLat = this.deg2rad(lat2 - lat1);
+    const dLng = this.deg2rad(lng2 - lng1);
+    const a = 
+      Math.sin(dLat/2) * Math.sin(dLat/2) +
+      Math.cos(this.deg2rad(lat1)) * Math.cos(this.deg2rad(lat2)) * 
+      Math.sin(dLng/2) * Math.sin(dLng/2);
+    const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
+    const distance = R * c; // Distance in kilometers
+    return distance;
+  }
 
-      if (!order) return;
+  private deg2rad(deg: number): number {
+    return deg * (Math.PI/180);
+  }
 
-      let title: string;
-      let message: string;
+  private calculateEstimatedTime(pickup: any, drop: any): number {
+    const distance = this.calculateDistance(pickup.lat, pickup.lng, drop.lat, drop.lng);
+    // Assume average speed of 30 km/h in city traffic
+    return Math.ceil((distance / 30) * 60); // Time in minutes
+  }
 
-      switch (type) {
-        case 'delivery_assigned':
-          title = 'Delivery Partner Assigned';
-          message = `Your order #${order.orderNumber} is being prepared for delivery`;
-          break;
-        case 'status_update':
-          title = 'Delivery Update';
-          message = `Your order #${order.orderNumber} is ${data?.status || 'being processed'}`;
-          break;
-        default:
-          return;
-      }
+  private mapDeliveryStatusToOrderStatus(deliveryStatus: string): string {
+    const statusMap: Record<string, string> = {
+      'assigned': 'assigned_to_delivery',
+      'picked_up': 'picked_up',
+      'in_transit': 'out_for_delivery',
+      'delivered': 'delivered',
+      'cancelled': 'cancelled',
+    };
+    return statusMap[deliveryStatus] || 'confirmed';
+  }
 
-      await db.insert(notifications).values({
-        id: uuidv4(),
-        userId: order.userId,
-        type: type === 'delivery_assigned' ? 'delivery_assigned' : 'order_status_updated',
-        title,
-        message,
-        metadata: { orderId, orderNumber: order.orderNumber, ...data },
-        createdAt: new Date(),
-        updatedAt: new Date(),
-      });
-    } catch (error) {
-      console.error('Error notifying customer:', error);
-    }
+  private getStatusMessage(status: string): string {
+    const messages: Record<string, string> = {
+      'assigned': 'Your order has been assigned to a delivery partner',
+      'picked_up': 'Your order has been picked up and is on the way',
+      'in_transit': 'Your order is out for delivery',
+      'delivered': 'Your order has been delivered successfully',
+      'cancelled': 'Your order delivery has been cancelled',
+    };
+    return messages[status] || 'Order status updated';
   }
 }
-
-export const deliveryService = new DeliveryService();
-export default deliveryService;
