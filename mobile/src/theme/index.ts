@@ -1,70 +1,47 @@
-import { DefaultTheme } from 'react-native-paper';
+import { colors } from './colors';
 
 export const theme = {
-  ...DefaultTheme,
-  colors: {
-    ...DefaultTheme.colors,
-    primary: '#FF6B6B',
-    accent: '#4ECDC4',
-    background: '#FFFFFF',
-    surface: '#F8F9FA',
-    error: '#FF5252',
-    text: '#2D3436',
-    disabled: '#B2BEC3',
-    placeholder: '#636E72',
-    backdrop: 'rgba(0, 0, 0, 0.5)',
-    notification: '#FF6B6B',
-    success: '#00B894',
-    warning: '#FDCB6E',
-    info: '#0984E3',
-    card: '#FFFFFF',
-    border: '#DFE6E9',
-  },
+  colors,
   spacing: {
     xs: 4,
     sm: 8,
     md: 16,
     lg: 24,
     xl: 32,
+    xxl: 40,
   },
-  roundness: 8,
-  animation: {
-    scale: 1.0,
+  borderRadius: {
+    sm: 4,
+    md: 8,
+    lg: 12,
+    xl: 16,
+    full: 9999,
   },
   typography: {
-    h1: {
-      fontSize: 32,
-      fontWeight: 'bold',
-      lineHeight: 40,
+    sizes: {
+      xs: 12,
+      sm: 14,
+      md: 16,
+      lg: 18,
+      xl: 20,
+      xxl: 24,
+      xxxl: 32,
     },
-    h2: {
-      fontSize: 24,
-      fontWeight: '600',
-      lineHeight: 32,
+    weights: {
+      normal: '400',
+      medium: '500',
+      semibold: '600',
+      bold: '700',
     },
-    h3: {
-      fontSize: 20,
-      fontWeight: '600',
-      lineHeight: 28,
-    },
-    body1: {
-      fontSize: 16,
-      lineHeight: 24,
-    },
-    body2: {
-      fontSize: 14,
-      lineHeight: 20,
-    },
-    caption: {
-      fontSize: 12,
-      lineHeight: 16,
-    },
-    button: {
-      fontSize: 16,
-      fontWeight: '500',
-      textTransform: 'uppercase',
+  },
+  shadows: {
+    neon: {
+      green: '0 0 20px rgba(0, 255, 136, 0.5)',
+      pink: '0 0 20px rgba(255, 0, 128, 0.5)',
+      blue: '0 0 20px rgba(0, 128, 255, 0.5)',
     },
   },
 };
 
+export * from './colors';
 export default theme;

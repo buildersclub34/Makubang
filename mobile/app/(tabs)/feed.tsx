@@ -1,227 +1,310 @@
 
-import React, { useState, useRef } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   View,
   Text,
   StyleSheet,
-  FlatList,
-  Dimensions,
+  ScrollView,
   TouchableOpacity,
-  Animated,
+  Dimensions,
+  Image,
+  ActivityIndicator,
+  RefreshControl,
 } from 'react-native';
-import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
+import { Ionicons } from '@expo/vector-icons';
+import { theme } from '../../src/theme';
 
-const { width, height } = Dimensions.get('window');
+const { width } = Dimensions.get('window');
 
-interface VideoItem {
+interface FoodVideo {
   id: string;
   title: string;
-  creator: string;
+  thumbnail: string;
   restaurant: string;
+  price: number;
   likes: number;
   views: number;
-  duration: string;
 }
 
-const mockVideos: VideoItem[] = [
-  {
-    id: '1',
-    title: 'Ultimate Cheese Burst Pizza',
-    creator: '@foodielover',
-    restaurant: 'Pizza Corner',
-    likes: 2340,
-    views: 12500,
-    duration: '0:45',
-  },
-  {
-    id: '2',
-    title: 'Spicy Korean Ramen Challenge',
-    creator: '@spicequeen',
-    restaurant: 'Seoul Kitchen',
-    likes: 5670,
-    views: 28900,
-    duration: '1:20',
-  },
-  {
-    id: '3',
-    title: 'Perfect Biryani Recipe',
-    creator: '@biryanimaster',
-    restaurant: 'Hyderabadi House',
-    likes: 8920,
-    views: 45600,
-    duration: '2:15',
-  },
-];
-
 export default function FeedScreen() {
-  const [currentIndex, setCurrentIndex] = useState(0);
-  const [likedVideos, setLikedVideos] = useState(new Set());
+  const [videos, setVideos] = useState<FoodVideo[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
 
-  const toggleLike = (videoId: string) => {
-    const newLikedVideos = new Set(likedVideos);
-    if (newLikedVideos.has(videoId)) {
-      newLikedVideos.delete(videoId);
-    } else {
-      newLikedVideos.add(videoId);
+  useEffect(() => {
+    loadVideos();
+  }, []);
+
+  const loadVideos = async () => {
+    try {
+      // Simulate API call
+      await new Promise(resolve => setTimeout(resolve, 1000));
+      setVideos([
+        {
+          id: '1',
+          title: 'Spicy Butter Chicken',
+          thumbnail: 'https://via.placeholder.com/300x400?text=Food+Video',
+          restaurant: 'Delhi Darbar',
+          price: 299,
+          likes: 1.2,
+          views: 5.4,
+        },
+        {
+          id: '2',
+          title: 'Margherita Pizza',
+          thumbnail: 'https://via.placeholder.com/300x400?text=Pizza+Video',
+          restaurant: 'Pizza Corner',
+          price: 450,
+          likes: 2.1,
+          views: 8.7,
+        },
+        {
+          id: '3',
+          title: 'Biryani Special',
+          thumbnail: 'https://via.placeholder.com/300x400?text=Biryani+Video',
+          restaurant: 'Hyderabad House',
+          price: 350,
+          likes: 3.5,
+          views: 12.3,
+        },
+      ]);
+    } catch (error) {
+      console.error('Error loading videos:', error);
+    } finally {
+      setLoading(false);
+      setRefreshing(false);
     }
-    setLikedVideos(newLikedVideos);
   };
 
-  const renderVideoCard = ({ item }: { item: VideoItem }) => (
-    <View style={styles.videoCard}>
-      <LinearGradient
-        colors={['#1A1A1A', '#0D0D0D']}
-        style={styles.videoBackground}
-      >
-        <View style={styles.videoContent}>
-          <Text style={styles.videoTitle}>{item.title}</Text>
-          <Text style={styles.creatorName}>{item.creator}</Text>
-          <Text style={styles.restaurantName}>{item.restaurant}</Text>
-        </View>
+  const onRefresh = () => {
+    setRefreshing(true);
+    loadVideos();
+  };
 
-        <View style={styles.videoActions}>
-          <TouchableOpacity
-            style={styles.actionButton}
-            onPress={() => toggleLike(item.id)}
-          >
-            <Ionicons
-              name={likedVideos.has(item.id) ? 'heart' : 'heart-outline'}
-              size={32}
-              color={likedVideos.has(item.id) ? '#FF6B35' : '#FFFFFF'}
-            />
-            <Text style={styles.actionText}>{item.likes}</Text>
-          </TouchableOpacity>
+  const formatNumber = (num: number) => {
+    if (num >= 1000) {
+      return (num / 1000).toFixed(1) + 'K';
+    }
+    return num.toString();
+  };
 
-          <TouchableOpacity style={styles.actionButton}>
-            <Ionicons name="chatbubble-outline" size={32} color="#FFFFFF" />
-            <Text style={styles.actionText}>Comment</Text>
-          </TouchableOpacity>
-
-          <TouchableOpacity style={styles.actionButton}>
-            <Ionicons name="share-outline" size={32} color="#FFFFFF" />
-            <Text style={styles.actionText}>Share</Text>
-          </TouchableOpacity>
-
-          <TouchableOpacity style={styles.orderButton}>
-            <LinearGradient
-              colors={['#00D4FF', '#0099CC']}
-              style={styles.orderGradient}
-            >
-              <Text style={styles.orderText}>ORDER NOW</Text>
-            </LinearGradient>
-          </TouchableOpacity>
-        </View>
-
-        <View style={styles.videoInfo}>
-          <Text style={styles.viewCount}>{item.views.toLocaleString()} views</Text>
-          <Text style={styles.duration}>{item.duration}</Text>
-        </View>
-      </LinearGradient>
-    </View>
-  );
+  if (loading) {
+    return (
+      <View style={styles.loadingContainer}>
+        <ActivityIndicator size="large" color={theme.colors.neon.green} />
+        <Text style={styles.loadingText}>Loading delicious content...</Text>
+      </View>
+    );
+  }
 
   return (
-    <View style={styles.container}>
-      <FlatList
-        data={mockVideos}
-        renderItem={renderVideoCard}
-        keyExtractor={(item) => item.id}
-        pagingEnabled
+    <LinearGradient
+      colors={[theme.colors.background.primary, theme.colors.background.secondary]}
+      style={styles.container}
+    >
+      <ScrollView
+        style={styles.scrollView}
+        refreshControl={
+          <RefreshControl refreshing={refreshing} onRefresh={onRefresh} />
+        }
         showsVerticalScrollIndicator={false}
-        snapToInterval={height - 100}
-        decelerationRate="fast"
-        onMomentumScrollEnd={(event) => {
-          const index = Math.round(event.nativeEvent.contentOffset.y / (height - 100));
-          setCurrentIndex(index);
-        }}
-      />
-    </View>
+      >
+        <View style={styles.header}>
+          <Text style={styles.headerTitle}>Makubang</Text>
+          <Text style={styles.headerSubtitle}>Feed Your Cravings</Text>
+        </View>
+
+        <View style={styles.videoGrid}>
+          {videos.map((video) => (
+            <TouchableOpacity key={video.id} style={styles.videoCard}>
+              <LinearGradient
+                colors={['rgba(0,255,136,0.1)', 'rgba(255,0,128,0.1)']}
+                style={styles.cardGradient}
+              >
+                <Image source={{ uri: video.thumbnail }} style={styles.thumbnail} />
+                
+                <View style={styles.videoOverlay}>
+                  <TouchableOpacity style={styles.playButton}>
+                    <Ionicons name="play" size={24} color={theme.colors.text.primary} />
+                  </TouchableOpacity>
+                </View>
+
+                <View style={styles.videoInfo}>
+                  <Text style={styles.videoTitle} numberOfLines={2}>
+                    {video.title}
+                  </Text>
+                  <Text style={styles.restaurantName}>
+                    {video.restaurant}
+                  </Text>
+                  
+                  <View style={styles.priceContainer}>
+                    <LinearGradient
+                      colors={[theme.colors.neon.green, theme.colors.neon.blue]}
+                      style={styles.priceGradient}
+                    >
+                      <Text style={styles.priceText}>₹{video.price}</Text>
+                    </LinearGradient>
+                  </View>
+
+                  <View style={styles.statsContainer}>
+                    <View style={styles.statItem}>
+                      <Ionicons name="heart" size={16} color={theme.colors.neon.pink} />
+                      <Text style={styles.statText}>{formatNumber(video.likes)}</Text>
+                    </View>
+                    <View style={styles.statItem}>
+                      <Ionicons name="eye" size={16} color={theme.colors.neon.blue} />
+                      <Text style={styles.statText}>{formatNumber(video.views)}</Text>
+                    </View>
+                  </View>
+                </View>
+              </LinearGradient>
+            </TouchableOpacity>
+          ))}
+        </View>
+
+        <TouchableOpacity style={styles.loadMoreButton}>
+          <LinearGradient
+            colors={[theme.colors.neon.green, theme.colors.neon.blue]}
+            style={styles.loadMoreGradient}
+          >
+            <Text style={styles.loadMoreText}>Load More</Text>
+            <Ionicons name="refresh" size={20} color={theme.colors.text.primary} />
+          </LinearGradient>
+        </TouchableOpacity>
+      </ScrollView>
+    </LinearGradient>
   );
 }
 
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#0D0D0D',
   },
-  videoCard: {
-    height: height - 100,
-    width: width,
-  },
-  videoBackground: {
-    flex: 1,
-    justifyContent: 'space-between',
-    padding: 20,
-  },
-  videoContent: {
+  loadingContainer: {
     flex: 1,
     justifyContent: 'center',
     alignItems: 'center',
+    backgroundColor: theme.colors.background.primary,
   },
-  videoTitle: {
-    fontSize: 24,
-    fontWeight: '800',
-    color: '#FFFFFF',
+  loadingText: {
+    color: theme.colors.text.secondary,
+    marginTop: theme.spacing.md,
+    fontSize: theme.typography.sizes.md,
+  },
+  scrollView: {
+    flex: 1,
+  },
+  header: {
+    padding: theme.spacing.lg,
+    alignItems: 'center',
+  },
+  headerTitle: {
+    fontSize: theme.typography.sizes.xxxl,
+    fontWeight: theme.typography.weights.bold,
+    color: theme.colors.text.primary,
     textAlign: 'center',
-    marginBottom: 12,
+    textShadowColor: theme.colors.neon.green,
+    textShadowOffset: { width: 0, height: 0 },
+    textShadowRadius: 10,
   },
-  creatorName: {
-    fontSize: 16,
-    color: '#00D4FF',
-    fontWeight: '600',
-    marginBottom: 8,
+  headerSubtitle: {
+    fontSize: theme.typography.sizes.md,
+    color: theme.colors.text.secondary,
+    marginTop: theme.spacing.sm,
   },
-  restaurantName: {
-    fontSize: 14,
-    color: '#FF6B35',
-    fontWeight: '500',
+  videoGrid: {
+    paddingHorizontal: theme.spacing.md,
   },
-  videoActions: {
+  videoCard: {
+    marginBottom: theme.spacing.lg,
+    borderRadius: theme.borderRadius.lg,
+    overflow: 'hidden',
+  },
+  cardGradient: {
+    borderRadius: theme.borderRadius.lg,
+    borderWidth: 1,
+    borderColor: theme.colors.border.primary,
+  },
+  thumbnail: {
+    width: '100%',
+    height: 200,
+    borderRadius: theme.borderRadius.md,
+  },
+  videoOverlay: {
+    ...StyleSheet.absoluteFillObject,
+    justifyContent: 'center',
     alignItems: 'center',
-    gap: 20,
+    backgroundColor: 'rgba(0,0,0,0.3)',
   },
-  actionButton: {
+  playButton: {
+    width: 60,
+    height: 60,
+    borderRadius: 30,
+    backgroundColor: 'rgba(0,255,136,0.8)',
+    justifyContent: 'center',
     alignItems: 'center',
-    padding: 12,
-  },
-  actionText: {
-    color: '#FFFFFF',
-    fontSize: 12,
-    marginTop: 4,
-    fontWeight: '600',
-  },
-  orderButton: {
-    marginTop: 20,
-  },
-  orderGradient: {
-    paddingVertical: 16,
-    paddingHorizontal: 32,
-    borderRadius: 12,
-    borderWidth: 2,
-    borderColor: '#0099CC',
-  },
-  orderText: {
-    color: '#0D0D0D',
-    fontSize: 16,
-    fontWeight: '800',
-    letterSpacing: 1,
+    shadowColor: theme.colors.neon.green,
+    shadowOffset: { width: 0, height: 0 },
+    shadowOpacity: 0.8,
+    shadowRadius: 10,
   },
   videoInfo: {
+    padding: theme.spacing.md,
+  },
+  videoTitle: {
+    fontSize: theme.typography.sizes.lg,
+    fontWeight: theme.typography.weights.semibold,
+    color: theme.colors.text.primary,
+    marginBottom: theme.spacing.sm,
+  },
+  restaurantName: {
+    fontSize: theme.typography.sizes.sm,
+    color: theme.colors.text.secondary,
+    marginBottom: theme.spacing.md,
+  },
+  priceContainer: {
+    alignSelf: 'flex-start',
+    marginBottom: theme.spacing.md,
+  },
+  priceGradient: {
+    paddingHorizontal: theme.spacing.md,
+    paddingVertical: theme.spacing.sm,
+    borderRadius: theme.borderRadius.full,
+  },
+  priceText: {
+    fontSize: theme.typography.sizes.md,
+    fontWeight: theme.typography.weights.bold,
+    color: theme.colors.text.primary,
+  },
+  statsContainer: {
     flexDirection: 'row',
-    justifyContent: 'space-between',
+    gap: theme.spacing.lg,
+  },
+  statItem: {
+    flexDirection: 'row',
     alignItems: 'center',
+    gap: theme.spacing.sm,
   },
-  viewCount: {
-    color: '#CCCCCC',
-    fontSize: 12,
+  statText: {
+    fontSize: theme.typography.sizes.sm,
+    color: theme.colors.text.secondary,
   },
-  duration: {
-    color: '#CCCCCC',
-    fontSize: 12,
-    backgroundColor: '#1A1A1A',
-    paddingHorizontal: 8,
-    paddingVertical: 4,
-    borderRadius: 4,
+  loadMoreButton: {
+    margin: theme.spacing.lg,
+    borderRadius: theme.borderRadius.lg,
+    overflow: 'hidden',
+  },
+  loadMoreGradient: {
+    flexDirection: 'row',
+    justifyContent: 'center',
+    alignItems: 'center',
+    paddingVertical: theme.spacing.lg,
+    gap: theme.spacing.sm,
+  },
+  loadMoreText: {
+    fontSize: theme.typography.sizes.md,
+    fontWeight: theme.typography.weights.semibold,
+    color: theme.colors.text.primary,
   },
 });

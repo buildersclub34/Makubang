@@ -1,256 +1,398 @@
 
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   View,
   Text,
   StyleSheet,
   ScrollView,
   TouchableOpacity,
-  Switch,
   Dimensions,
+  Alert,
 } from 'react-native';
-import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
+import { Ionicons } from '@expo/vector-icons';
 
 const { width } = Dimensions.get('window');
 
+const colors = {
+  background: {
+    primary: '#1A1A1A',
+    secondary: '#2A2A2A',
+  },
+  neon: {
+    green: '#00FF88',
+    pink: '#FF0080',
+    blue: '#0080FF',
+    yellow: '#FFFF00',
+  },
+  text: {
+    primary: '#FFFFFF',
+    secondary: '#CCCCCC',
+  },
+};
+
 export default function DashboardScreen() {
   const [isOnline, setIsOnline] = useState(false);
+  const [earnings, setEarnings] = useState({
+    today: 1250,
+    week: 8750,
+    month: 32500,
+  });
+  const [activeOrders, setActiveOrders] = useState(3);
 
-  const StatCard = ({ title, value, icon, color }) => (
-    <View style={[styles.statCard, { borderColor: color }]}>
-      <LinearGradient
-        colors={['#2A2A2A', '#1A1A1A']}
-        style={styles.statCardGradient}
-      >
-        <Ionicons name={icon} size={32} color={color} />
-        <Text style={[styles.statValue, { color }]}>{value}</Text>
-        <Text style={styles.statTitle}>{title}</Text>
-      </LinearGradient>
-    </View>
-  );
+  const toggleOnlineStatus = () => {
+    setIsOnline(!isOnline);
+    Alert.alert(
+      isOnline ? 'Going Offline' : 'Going Online',
+      isOnline 
+        ? 'You will stop receiving new orders' 
+        : 'You are now available for deliveries'
+    );
+  };
 
   return (
-    <ScrollView style={styles.container}>
-      <View style={styles.header}>
-        <Text style={styles.greeting}>Hello, Partner!</Text>
-        <View style={styles.onlineToggle}>
-          <Text style={[styles.onlineText, { color: isOnline ? '#4CAF50' : '#FF5722' }]}>
-            {isOnline ? 'ONLINE' : 'OFFLINE'}
-          </Text>
-          <Switch
-            value={isOnline}
-            onValueChange={setIsOnline}
-            trackColor={{ false: '#FF5722', true: '#4CAF50' }}
-            thumbColor="#FFFFFF"
-          />
+    <LinearGradient
+      colors={[colors.background.primary, colors.background.secondary]}
+      style={styles.container}
+    >
+      <ScrollView style={styles.scrollView} showsVerticalScrollIndicator={false}>
+        <View style={styles.header}>
+          <Text style={styles.headerTitle}>Delivery Dashboard</Text>
+          <Text style={styles.headerSubtitle}>Makubang Partner</Text>
         </View>
-      </View>
 
-      <View style={styles.statsGrid}>
-        <StatCard
-          title="Today's Earnings"
-          value="₹1,240"
-          icon="wallet"
-          color="#4CAF50"
-        />
-        <StatCard
-          title="Orders Completed"
-          value="12"
-          icon="checkmark-circle"
-          color="#2196F3"
-        />
-        <StatCard
-          title="Distance Covered"
-          value="45.2 km"
-          icon="bicycle"
-          color="#FF9800"
-        />
-        <StatCard
-          title="Rating"
-          value="4.8 ⭐"
-          icon="star"
-          color="#FFD700"
-        />
-      </View>
-
-      <View style={styles.quickActions}>
-        <Text style={styles.sectionTitle}>Quick Actions</Text>
-        
-        <TouchableOpacity style={styles.actionButton}>
+        {/* Online Status Toggle */}
+        <TouchableOpacity 
+          style={styles.statusToggle} 
+          onPress={toggleOnlineStatus}
+        >
           <LinearGradient
-            colors={['#4CAF50', '#45A049']}
-            style={styles.actionGradient}
+            colors={isOnline 
+              ? [colors.neon.green, colors.neon.blue] 
+              : [colors.neon.pink, colors.neon.yellow]
+            }
+            style={styles.statusGradient}
           >
-            <Ionicons name="location" size={24} color="#FFFFFF" />
-            <Text style={styles.actionText}>VIEW ACTIVE ORDERS</Text>
+            <View style={styles.statusContent}>
+              <Ionicons 
+                name={isOnline ? 'checkmark-circle' : 'pause-circle'} 
+                size={32} 
+                color={colors.text.primary} 
+              />
+              <View style={styles.statusText}>
+                <Text style={styles.statusTitle}>
+                  {isOnline ? 'ONLINE' : 'OFFLINE'}
+                </Text>
+                <Text style={styles.statusSubtitle}>
+                  {isOnline ? 'Receiving Orders' : 'Tap to go online'}
+                </Text>
+              </View>
+            </View>
           </LinearGradient>
         </TouchableOpacity>
 
-        <TouchableOpacity style={styles.actionButton}>
-          <LinearGradient
-            colors={['#2196F3', '#1976D2']}
-            style={styles.actionGradient}
-          >
-            <Ionicons name="map" size={24} color="#FFFFFF" />
-            <Text style={styles.actionText}>OPEN LIVE MAP</Text>
-          </LinearGradient>
-        </TouchableOpacity>
+        {/* Earnings Cards */}
+        <View style={styles.earningsSection}>
+          <Text style={styles.sectionTitle}>Earnings Overview</Text>
+          <View style={styles.earningsGrid}>
+            <View style={styles.earningCard}>
+              <LinearGradient
+                colors={['rgba(0,255,136,0.1)', 'rgba(0,128,255,0.1)']}
+                style={styles.cardGradient}
+              >
+                <Ionicons name="today" size={24} color={colors.neon.green} />
+                <Text style={styles.earningAmount}>₹{earnings.today}</Text>
+                <Text style={styles.earningLabel}>Today</Text>
+              </LinearGradient>
+            </View>
 
-        <TouchableOpacity style={styles.actionButton}>
-          <LinearGradient
-            colors={['#FF9800', '#F57C00']}
-            style={styles.actionGradient}
-          >
-            <Ionicons name="analytics" size={24} color="#FFFFFF" />
-            <Text style={styles.actionText}>VIEW EARNINGS</Text>
-          </LinearGradient>
-        </TouchableOpacity>
-      </View>
+            <View style={styles.earningCard}>
+              <LinearGradient
+                colors={['rgba(255,0,128,0.1)', 'rgba(255,255,0,0.1)']}
+                style={styles.cardGradient}
+              >
+                <Ionicons name="calendar" size={24} color={colors.neon.pink} />
+                <Text style={styles.earningAmount}>₹{earnings.week}</Text>
+                <Text style={styles.earningLabel}>This Week</Text>
+              </LinearGradient>
+            </View>
 
-      <View style={styles.recentActivity}>
-        <Text style={styles.sectionTitle}>Recent Activity</Text>
-        
-        <View style={styles.activityItem}>
-          <View style={styles.activityIcon}>
-            <Ionicons name="checkmark-circle" size={24} color="#4CAF50" />
-          </View>
-          <View style={styles.activityContent}>
-            <Text style={styles.activityTitle}>Order Delivered</Text>
-            <Text style={styles.activitySubtitle}>Pizza Corner • ₹156 earned</Text>
-            <Text style={styles.activityTime}>2 minutes ago</Text>
+            <View style={styles.earningCard}>
+              <LinearGradient
+                colors={['rgba(0,128,255,0.1)', 'rgba(255,255,0,0.1)']}
+                style={styles.cardGradient}
+              >
+                <Ionicons name="stats-chart" size={24} color={colors.neon.blue} />
+                <Text style={styles.earningAmount}>₹{earnings.month}</Text>
+                <Text style={styles.earningLabel}>This Month</Text>
+              </LinearGradient>
+            </View>
           </View>
         </View>
 
-        <View style={styles.activityItem}>
-          <View style={styles.activityIcon}>
-            <Ionicons name="bicycle" size={24} color="#2196F3" />
+        {/* Active Orders */}
+        <View style={styles.ordersSection}>
+          <View style={styles.sectionHeader}>
+            <Text style={styles.sectionTitle}>Active Orders</Text>
+            <View style={styles.orderBadge}>
+              <Text style={styles.orderBadgeText}>{activeOrders}</Text>
+            </View>
           </View>
-          <View style={styles.activityContent}>
-            <Text style={styles.activityTitle}>Order Picked Up</Text>
-            <Text style={styles.activitySubtitle}>Burger House • On the way</Text>
-            <Text style={styles.activityTime}>15 minutes ago</Text>
+
+          <TouchableOpacity style={styles.orderCard}>
+            <LinearGradient
+              colors={['rgba(0,255,136,0.1)', 'rgba(255,0,128,0.1)']}
+              style={styles.orderCardGradient}
+            >
+              <View style={styles.orderHeader}>
+                <Text style={styles.orderTitle}>Order #MK12345</Text>
+                <Text style={styles.orderStatus}>Pickup Ready</Text>
+              </View>
+              <Text style={styles.orderRestaurant}>Pizza Corner</Text>
+              <Text style={styles.orderAddress}>123 Main St, Sector 15</Text>
+              <View style={styles.orderFooter}>
+                <Text style={styles.orderAmount}>₹450</Text>
+                <TouchableOpacity style={styles.orderAction}>
+                  <Text style={styles.orderActionText}>View Details</Text>
+                </TouchableOpacity>
+              </View>
+            </LinearGradient>
+          </TouchableOpacity>
+        </View>
+
+        {/* Quick Actions */}
+        <View style={styles.actionsSection}>
+          <Text style={styles.sectionTitle}>Quick Actions</Text>
+          <View style={styles.actionsGrid}>
+            <TouchableOpacity style={styles.actionCard}>
+              <LinearGradient
+                colors={[colors.neon.green, colors.neon.blue]}
+                style={styles.actionGradient}
+              >
+                <Ionicons name="map" size={24} color={colors.text.primary} />
+                <Text style={styles.actionText}>Live Map</Text>
+              </LinearGradient>
+            </TouchableOpacity>
+
+            <TouchableOpacity style={styles.actionCard}>
+              <LinearGradient
+                colors={[colors.neon.pink, colors.neon.yellow]}
+                style={styles.actionGradient}
+              >
+                <Ionicons name="wallet" size={24} color={colors.text.primary} />
+                <Text style={styles.actionText}>Wallet</Text>
+              </LinearGradient>
+            </TouchableOpacity>
+
+            <TouchableOpacity style={styles.actionCard}>
+              <LinearGradient
+                colors={[colors.neon.blue, colors.neon.green]}
+                style={styles.actionGradient}
+              >
+                <Ionicons name="time" size={24} color={colors.text.primary} />
+                <Text style={styles.actionText}>History</Text>
+              </LinearGradient>
+            </TouchableOpacity>
+
+            <TouchableOpacity style={styles.actionCard}>
+              <LinearGradient
+                colors={[colors.neon.yellow, colors.neon.pink]}
+                style={styles.actionGradient}
+              >
+                <Ionicons name="settings" size={24} color={colors.text.primary} />
+                <Text style={styles.actionText}>Settings</Text>
+              </LinearGradient>
+            </TouchableOpacity>
           </View>
         </View>
-      </View>
-    </ScrollView>
+      </ScrollView>
+    </LinearGradient>
   );
 }
 
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#1A1A1A',
+  },
+  scrollView: {
+    flex: 1,
   },
   header: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
+    padding: 24,
     alignItems: 'center',
-    padding: 20,
-    paddingTop: 40,
   },
-  greeting: {
-    fontSize: 24,
-    fontWeight: '800',
-    color: '#FFFFFF',
-  },
-  onlineToggle: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 12,
-  },
-  onlineText: {
-    fontSize: 16,
+  headerTitle: {
+    fontSize: 28,
     fontWeight: '700',
+    color: colors.text.primary,
+    textShadowColor: colors.neon.green,
+    textShadowOffset: { width: 0, height: 0 },
+    textShadowRadius: 10,
   },
-  statsGrid: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    justifyContent: 'space-between',
-    paddingHorizontal: 20,
-    gap: 16,
+  headerSubtitle: {
+    fontSize: 16,
+    color: colors.text.secondary,
+    marginTop: 8,
   },
-  statCard: {
-    width: (width - 56) / 2,
-    borderWidth: 2,
-    borderRadius: 16,
+  statusToggle: {
+    margin: 16,
+    borderRadius: 12,
     overflow: 'hidden',
   },
-  statCardGradient: {
+  statusGradient: {
     padding: 20,
+  },
+  statusContent: {
+    flexDirection: 'row',
     alignItems: 'center',
-    gap: 8,
   },
-  statValue: {
-    fontSize: 24,
-    fontWeight: '800',
+  statusText: {
+    marginLeft: 16,
   },
-  statTitle: {
-    fontSize: 12,
-    color: '#CCCCCC',
-    textAlign: 'center',
+  statusTitle: {
+    fontSize: 20,
+    fontWeight: '700',
+    color: colors.text.primary,
   },
-  quickActions: {
-    padding: 20,
+  statusSubtitle: {
+    fontSize: 14,
+    color: colors.text.primary,
+    opacity: 0.8,
+  },
+  earningsSection: {
+    margin: 16,
   },
   sectionTitle: {
     fontSize: 20,
-    fontWeight: '800',
-    color: '#FFFFFF',
+    fontWeight: '600',
+    color: colors.text.primary,
     marginBottom: 16,
   },
-  actionButton: {
+  earningsGrid: {
+    flexDirection: 'row',
+    gap: 12,
+  },
+  earningCard: {
+    flex: 1,
+    borderRadius: 12,
+    overflow: 'hidden',
+  },
+  cardGradient: {
+    padding: 16,
+    alignItems: 'center',
+    borderWidth: 1,
+    borderColor: '#333',
+  },
+  earningAmount: {
+    fontSize: 18,
+    fontWeight: '700',
+    color: colors.text.primary,
+    marginTop: 8,
+  },
+  earningLabel: {
+    fontSize: 12,
+    color: colors.text.secondary,
+    marginTop: 4,
+  },
+  ordersSection: {
+    margin: 16,
+  },
+  sectionHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 16,
+  },
+  orderBadge: {
+    backgroundColor: colors.neon.green,
+    borderRadius: 20,
+    paddingHorizontal: 12,
+    paddingVertical: 4,
+  },
+  orderBadgeText: {
+    fontSize: 14,
+    fontWeight: '700',
+    color: colors.background.primary,
+  },
+  orderCard: {
+    borderRadius: 12,
+    overflow: 'hidden',
     marginBottom: 12,
+  },
+  orderCardGradient: {
+    padding: 16,
+    borderWidth: 1,
+    borderColor: '#333',
+  },
+  orderHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 8,
+  },
+  orderTitle: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: colors.text.primary,
+  },
+  orderStatus: {
+    fontSize: 12,
+    color: colors.neon.green,
+    fontWeight: '600',
+  },
+  orderRestaurant: {
+    fontSize: 14,
+    color: colors.text.secondary,
+    marginBottom: 4,
+  },
+  orderAddress: {
+    fontSize: 12,
+    color: colors.text.secondary,
+    marginBottom: 12,
+  },
+  orderFooter: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+  },
+  orderAmount: {
+    fontSize: 16,
+    fontWeight: '700',
+    color: colors.text.primary,
+  },
+  orderAction: {
+    backgroundColor: colors.neon.blue,
+    paddingHorizontal: 16,
+    paddingVertical: 6,
+    borderRadius: 20,
+  },
+  orderActionText: {
+    fontSize: 12,
+    fontWeight: '600',
+    color: colors.text.primary,
+  },
+  actionsSection: {
+    margin: 16,
+    marginBottom: 32,
+  },
+  actionsGrid: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 12,
+  },
+  actionCard: {
+    width: (width - 56) / 2,
     borderRadius: 12,
     overflow: 'hidden',
   },
   actionGradient: {
-    flexDirection: 'row',
+    padding: 20,
     alignItems: 'center',
-    padding: 16,
-    gap: 12,
   },
   actionText: {
-    color: '#FFFFFF',
-    fontSize: 16,
-    fontWeight: '700',
-  },
-  recentActivity: {
-    padding: 20,
-  },
-  activityItem: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: '#2A2A2A',
-    padding: 16,
-    borderRadius: 12,
-    marginBottom: 12,
-    gap: 16,
-  },
-  activityIcon: {
-    width: 48,
-    height: 48,
-    borderRadius: 24,
-    backgroundColor: '#1A1A1A',
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  activityContent: {
-    flex: 1,
-  },
-  activityTitle: {
-    fontSize: 16,
-    fontWeight: '600',
-    color: '#FFFFFF',
-    marginBottom: 4,
-  },
-  activitySubtitle: {
     fontSize: 14,
-    color: '#CCCCCC',
-    marginBottom: 2,
-  },
-  activityTime: {
-    fontSize: 12,
-    color: '#888888',
+    fontWeight: '600',
+    color: colors.text.primary,
+    marginTop: 8,
   },
 });
