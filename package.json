@@ -7,6 +7,8 @@
     "dev": "NODE_ENV=development tsx server/index.ts",
     "dev:client": "vite",
     "dev:server": "tsx watch server/index.ts",
+    "dev:mobile": "cd mobile && expo start",
+    "dev:delivery": "cd delivery-app && expo start",
     "build": "npm run build:client && npm run build:server",
     "build:client": "vite build",
     "build:server": "tsc --project server/tsconfig.json",
@@ -15,7 +17,9 @@
     "preview": "vite preview",
     "db:generate": "drizzle-kit generate:pg",
     "db:migrate": "tsx migrations/apply-migrations.ts",
-    "db:studio": "drizzle-kit studio"
+    "db:studio": "drizzle-kit studio",
+    "mobile:install": "cd mobile && npm install",
+    "delivery:install": "cd delivery-app && npm install"
   },
   "dependencies": {
     "@auth/drizzle-adapter": "^1.7.2",

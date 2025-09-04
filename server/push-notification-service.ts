@@ -1,361 +1,269 @@
-
 import admin from 'firebase-admin';
-import { db } from './db';
-import { users, notifications } from '../shared/schema';
-import { eq } from 'drizzle-orm';
+import { db } from './db.js';
+
+// Initialize Firebase Admin
+if (!admin.apps.length) {
+  admin.initializeApp({
+    credential: admin.credential.cert({
+      projectId: process.env.FIREBASE_PROJECT_ID,
+      clientEmail: process.env.FIREBASE_CLIENT_EMAIL,
+      privateKey: process.env.FIREBASE_PRIVATE_KEY?.replace(/\\n/g, '\n'),
+    }),
+  });
+}
 
 export interface NotificationPayload {
   title: string;
   body: string;
   data?: Record<string, string>;
   imageUrl?: string;
-  actionUrl?: string;
 }
 
-export interface OrderNotificationData {
-  orderId: string;
-  status: string;
-  restaurantName?: string;
-  deliveryTime?: string;
-  trackingUrl?: string;
+export interface NotificationTarget {
+  userId?: string;
+  deviceToken?: string;
+  topic?: string;
 }
 
 export class PushNotificationService {
-  private initialized = false;
+  private messaging = admin.messaging();
 
-  constructor() {
-    this.initializeFirebase();
-  }
-
-  private initializeFirebase() {
+  async sendNotification(
+    target: NotificationTarget,
+    payload: NotificationPayload
+  ): Promise<boolean> {
     try {
-      if (!admin.apps.length) {
-        const serviceAccount = process.env.FIREBASE_SERVICE_ACCOUNT_KEY 
-          ? JSON.parse(process.env.FIREBASE_SERVICE_ACCOUNT_KEY)
-          : null;
-
-        if (serviceAccount) {
-          admin.initializeApp({
-            credential: admin.credential.cert(serviceAccount),
-            projectId: process.env.FIREBASE_PROJECT_ID,
-          });
-          this.initialized = true;
-        } else {
-          console.warn('Firebase service account not configured. Push notifications disabled.');
-        }
-      } else {
-        this.initialized = true;
-      }
-    } catch (error) {
-      console.error('Failed to initialize Firebase:', error);
-      this.initialized = false;
-    }
-  }
-
-  // Send notification to specific user
-  async sendToUser(userId: string, payload: NotificationPayload): Promise<boolean> {
-    if (!this.initialized) {
-      console.warn('Firebase not initialized. Skipping push notification.');
-      return false;
-    }
-
-    try {
-      // Get user's FCM token
-      const [user] = await db.select({ fcmToken: users.fcmToken })
-        .from(users)
-        .where(eq(users.id, userId))
-        .limit(1);
-
-      if (!user?.fcmToken) {
-        console.log(`No FCM token found for user ${userId}`);
-        return false;
-      }
-
-      // Send notification
-      const message = {
+      const message: admin.messaging.Message = {
         notification: {
           title: payload.title,
           body: payload.body,
           imageUrl: payload.imageUrl,
         },
         data: payload.data || {},
-        token: user.fcmToken,
         android: {
           notification: {
-            channelId: 'makubang_orders',
+            channelId: 'makubang-orders',
             priority: 'high' as const,
             defaultSound: true,
+            defaultVibrateTimings: true,
           },
         },
         apns: {
           payload: {
             aps: {
-              alert: {
-                title: payload.title,
-                body: payload.body,
-              },
               sound: 'default',
               badge: 1,
             },
           },
         },
-        webpush: {
-          notification: {
-            title: payload.title,
-            body: payload.body,
-            icon: '/icons/notification-icon.png',
-            badge: '/icons/badge-icon.png',
-            image: payload.imageUrl,
-            actions: payload.actionUrl ? [{
-              action: 'view',
-              title: 'View Details',
-              icon: '/icons/view-icon.png',
-            }] : [],
-          },
-          fcmOptions: {
-            link: payload.actionUrl,
-          },
-        },
       };
 
-      const response = await admin.messaging().send(message);
-      
-      // Store notification in database
-      await this.storeNotification(userId, payload);
-
-      console.log('Push notification sent successfully:', response);
-      return true;
-    } catch (error) {
-      console.error('Error sending push notification:', error);
-      return false;
-    }
-  }
-
-  // Send notification to multiple users
-  async sendToMultipleUsers(userIds: string[], payload: NotificationPayload): Promise<{ success: number; failed: number }> {
-    const results = await Promise.allSettled(
-      userIds.map(userId => this.sendToUser(userId, payload))
-    );
-
-    const success = results.filter(result => 
-      result.status === 'fulfilled' && result.value === true
-    ).length;
-    const failed = results.length - success;
-
-    return { success, failed };
-  }
-
-  // Send order-related notifications
-  async sendOrderNotification(userId: string, orderId: string, status: string, additionalData?: OrderNotificationData): Promise<boolean> {
-    const notificationPayloads = this.getOrderNotificationPayload(status, orderId, additionalData);
-    
-    if (!notificationPayloads) {
-      console.log(`No notification configured for order status: ${status}`);
-      return false;
-    }
-
-    return this.sendToUser(userId, notificationPayloads);
-  }
-
-  // Send notification to all users with a specific role
-  async sendToRole(role: string, payload: NotificationPayload): Promise<{ success: number; failed: number }> {
-    try {
-      const usersWithRole = await db.select({ id: users.id, fcmToken: users.fcmToken })
-        .from(users)
-        .where(eq(users.role, role));
-
-      const userIds = usersWithRole
-        .filter(user => user.fcmToken)
-        .map(user => user.id);
-
-      return this.sendToMultipleUsers(userIds, payload);
-    } catch (error) {
-      console.error('Error sending notification to role:', error);
-      return { success: 0, failed: 0 };
-    }
-  }
-
-  // Send broadcast notification to all users
-  async sendBroadcast(payload: NotificationPayload, excludeUserIds?: string[]): Promise<{ success: number; failed: number }> {
-    try {
-      let query = db.select({ id: users.id, fcmToken: users.fcmToken }).from(users);
-      
-      if (excludeUserIds && excludeUserIds.length > 0) {
-        // Note: This would need proper SQL "NOT IN" implementation
-        // For now, we'll filter after querying
+      if (target.deviceToken) {
+        message.token = target.deviceToken;
+      } else if (target.topic) {
+        message.topic = target.topic;
+      } else if (target.userId) {
+        // Get user's device tokens
+        const deviceTokens = await this.getUserDeviceTokens(target.userId);
+        if (deviceTokens.length > 0) {
+          message.tokens = deviceTokens;
+        } else {
+          console.log(`No device tokens found for user ${target.userId}`);
+          return false;
+        }
       }
 
-      const allUsers = await query;
-      
-      let userIds = allUsers
-        .filter(user => user.fcmToken)
-        .map(user => user.id);
+      const response = await this.messaging.send(message);
+      console.log('Successfully sent message:', response);
+      return true;
+    } catch (error) {
+      console.error('Error sending message:', error);
+      return false;
+    }
+  }
 
-      if (excludeUserIds && excludeUserIds.length > 0) {
-        userIds = userIds.filter(id => !excludeUserIds.includes(id));
+  async sendBulkNotifications(
+    targets: NotificationTarget[],
+    payload: NotificationPayload
+  ): Promise<{ successCount: number; failureCount: number }> {
+    let successCount = 0;
+    let failureCount = 0;
+
+    const promises = targets.map(async (target) => {
+      const success = await this.sendNotification(target, payload);
+      if (success) {
+        successCount++;
+      } else {
+        failureCount++;
+      }
+    });
+
+    await Promise.all(promises);
+    return { successCount, failureCount };
+  }
+
+  async sendOrderNotification(orderId: string, status: string) {
+    try {
+      // Get order details
+      const order = await db.query('SELECT * FROM orders WHERE id = $1', [orderId]);
+      if (!order.rows[0]) return;
+
+      const orderData = order.rows[0];
+      let title = '';
+      let body = '';
+
+      switch (status) {
+        case 'confirmed':
+          title = 'Order Confirmed! 🎉';
+          body = `Your order from ${orderData.restaurant_name} has been confirmed`;
+          break;
+        case 'preparing':
+          title = 'Order Being Prepared 👨‍🍳';
+          body = `Your order is being prepared at ${orderData.restaurant_name}`;
+          break;
+        case 'picked_up':
+          title = 'Order Picked Up 🚀';
+          body = `Your order is on the way! Estimated delivery: ${orderData.estimated_delivery}`;
+          break;
+        case 'delivered':
+          title = 'Order Delivered! 🍕';
+          body = `Your order from ${orderData.restaurant_name} has been delivered. Enjoy!`;
+          break;
+        case 'cancelled':
+          title = 'Order Cancelled 😞';
+          body = `Your order from ${orderData.restaurant_name} has been cancelled`;
+          break;
       }
 
-      return this.sendToMultipleUsers(userIds, payload);
+      await this.sendNotification(
+        { userId: orderData.user_id },
+        {
+          title,
+          body,
+          data: {
+            orderId: orderId,
+            type: 'order_update',
+            status: status,
+          },
+        }
+      );
+
+      // If order is ready for pickup, notify delivery partners
+      if (status === 'ready_for_pickup') {
+        await this.sendNotification(
+          { topic: 'delivery_partners' },
+          {
+            title: 'New Delivery Available! 🚴‍♂️',
+            body: `Pickup from ${orderData.restaurant_name}`,
+            data: {
+              orderId: orderId,
+              type: 'new_delivery',
+              restaurantName: orderData.restaurant_name,
+              pickupAddress: orderData.pickup_address,
+              deliveryAddress: orderData.delivery_address,
+              amount: orderData.total_amount.toString(),
+            },
+          }
+        );
+      }
     } catch (error) {
-      console.error('Error sending broadcast notification:', error);
-      return { success: 0, failed: 0 };
+      console.error('Error sending order notification:', error);
     }
   }
 
-  // Update user's FCM token
-  async updateUserFCMToken(userId: string, fcmToken: string): Promise<boolean> {
+  async sendCreatorNotification(creatorId: string, type: string, data: any) {
     try {
-      await db.update(users)
-        .set({ fcmToken, updatedAt: new Date() })
-        .where(eq(users.id, userId));
-      
-      return true;
+      let title = '';
+      let body = '';
+
+      switch (type) {
+        case 'new_follower':
+          title = 'New Follower! 🎉';
+          body = `${data.followerName} started following you`;
+          break;
+        case 'video_liked':
+          title = 'Your video got a like! ❤️';
+          body = `${data.likerName} liked your video "${data.videoTitle}"`;
+          break;
+        case 'video_comment':
+          title = 'New comment on your video! 💬';
+          body = `${data.commenterName} commented on "${data.videoTitle}"`;
+          break;
+        case 'order_from_video':
+          title = 'Order from your video! 🍕';
+          body = `Someone ordered ${data.itemName} after watching your video`;
+          break;
+      }
+
+      await this.sendNotification(
+        { userId: creatorId },
+        {
+          title,
+          body,
+          data: {
+            type: type,
+            ...data,
+          },
+        }
+      );
     } catch (error) {
-      console.error('Error updating FCM token:', error);
-      return false;
+      console.error('Error sending creator notification:', error);
     }
   }
 
-  // Remove user's FCM token (logout)
-  async removeUserFCMToken(userId: string): Promise<boolean> {
+  private async getUserDeviceTokens(userId: string): Promise<string[]> {
     try {
-      await db.update(users)
-        .set({ fcmToken: null, updatedAt: new Date() })
-        .where(eq(users.id, userId));
-      
-      return true;
+      const result = await db.query(
+        'SELECT device_token FROM user_devices WHERE user_id = $1 AND is_active = true',
+        [userId]
+      );
+      return result.rows.map(row => row.device_token);
     } catch (error) {
-      console.error('Error removing FCM token:', error);
-      return false;
+      console.error('Error getting user device tokens:', error);
+      return [];
     }
   }
 
-  // Schedule notification (basic implementation)
-  async scheduleNotification(userId: string, payload: NotificationPayload, scheduleTime: Date): Promise<boolean> {
-    const delay = scheduleTime.getTime() - Date.now();
-    
-    if (delay <= 0) {
-      return this.sendToUser(userId, payload);
-    }
-
-    setTimeout(() => {
-      this.sendToUser(userId, payload);
-    }, delay);
-
-    return true;
-  }
-
-  // Private helper methods
-  private async storeNotification(userId: string, payload: NotificationPayload) {
+  async registerDeviceToken(userId: string, deviceToken: string, platform: 'ios' | 'android') {
     try {
-      await db.insert(notifications).values({
-        id: crypto.randomUUID(),
-        userId,
-        title: payload.title,
-        message: payload.body,
-        type: payload.data?.type || 'general',
-        data: payload.data,
-        read: false,
-        createdAt: new Date(),
-      });
+      await db.query(
+        `INSERT INTO user_devices (user_id, device_token, platform, is_active, created_at, updated_at)
+         VALUES ($1, $2, $3, true, NOW(), NOW())
+         ON CONFLICT (user_id, device_token)
+         DO UPDATE SET is_active = true, updated_at = NOW()`,
+        [userId, deviceToken, platform]
+      );
     } catch (error) {
-      console.error('Error storing notification:', error);
+      console.error('Error registering device token:', error);
     }
   }
 
-  private getOrderNotificationPayload(status: string, orderId: string, additionalData?: OrderNotificationData): NotificationPayload | null {
-    const baseActionUrl = `/orders/${orderId}`;
-    
-    switch (status) {
-      case 'confirmed':
-        return {
-          title: 'Order Confirmed! 🎉',
-          body: `Your order from ${additionalData?.restaurantName || 'restaurant'} has been confirmed and is being prepared.`,
-          data: {
-            type: 'order',
-            orderId,
-            status,
-          },
-          actionUrl: baseActionUrl,
-        };
+  async unregisterDeviceToken(deviceToken: string) {
+    try {
+      await db.query(
+        'UPDATE user_devices SET is_active = false WHERE device_token = $1',
+        [deviceToken]
+      );
+    } catch (error) {
+      console.error('Error unregistering device token:', error);
+    }
+  }
 
-      case 'preparing':
-        return {
-          title: 'Order Being Prepared 👨‍🍳',
-          body: `Your delicious food is being prepared with care. Estimated time: ${additionalData?.deliveryTime || '30-45 minutes'}.`,
-          data: {
-            type: 'order',
-            orderId,
-            status,
-          },
-          actionUrl: baseActionUrl,
-        };
+  async subscribeToTopic(deviceToken: string, topic: string) {
+    try {
+      await this.messaging.subscribeToTopic([deviceToken], topic);
+    } catch (error) {
+      console.error('Error subscribing to topic:', error);
+    }
+  }
 
-      case 'ready_for_pickup':
-        return {
-          title: 'Order Ready for Pickup! 📦',
-          body: 'Your order is ready and waiting for our delivery partner to pick it up.',
-          data: {
-            type: 'order',
-            orderId,
-            status,
-          },
-          actionUrl: baseActionUrl,
-        };
-
-      case 'picked_up':
-        return {
-          title: 'Order Picked Up! 🚴‍♂️',
-          body: 'Your order has been picked up and is on its way to you.',
-          data: {
-            type: 'order',
-            orderId,
-            status,
-          },
-          actionUrl: additionalData?.trackingUrl || baseActionUrl,
-        };
-
-      case 'out_for_delivery':
-        return {
-          title: 'Out for Delivery! 🛵',
-          body: `Your order is out for delivery and will arrive in ${additionalData?.deliveryTime || '15-20 minutes'}.`,
-          data: {
-            type: 'order',
-            orderId,
-            status,
-          },
-          actionUrl: additionalData?.trackingUrl || baseActionUrl,
-        };
-
-      case 'delivered':
-        return {
-          title: 'Order Delivered! ✅',
-          body: 'Your order has been delivered successfully. Enjoy your meal!',
-          data: {
-            type: 'order',
-            orderId,
-            status,
-          },
-          actionUrl: `${baseActionUrl}/rate`,
-        };
-
-      case 'cancelled':
-        return {
-          title: 'Order Cancelled 😞',
-          body: 'Your order has been cancelled. Any payment made will be refunded within 3-5 business days.',
-          data: {
-            type: 'order',
-            orderId,
-            status,
-          },
-          actionUrl: baseActionUrl,
-        };
-
-      default:
-        return null;
+  async unsubscribeFromTopic(deviceToken: string, topic: string) {
+    try {
+      await this.messaging.unsubscribeFromTopic([deviceToken], topic);
+    } catch (error) {
+      console.error('Error unsubscribing from topic:', error);
     }
   }
 }
 
-// Export singleton instance
 export const pushNotificationService = new PushNotificationService();
