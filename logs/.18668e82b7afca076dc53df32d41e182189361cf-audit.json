@@ -1,0 +1,15 @@
+{
+    "keep": {
+        "days": true,
+        "amount": 14
+    },
+    "auditLog": "C:\\Users\\salma\\Downloads\\Makubang\\logs\\.18668e82b7afca076dc53df32d41e182189361cf-audit.json",
+    "files": [
+        {
+            "date": 1757338788456,
+            "name": "C:\\Users\\salma\\Downloads\\Makubang\\logs\\combined-2025-09-08.log",
+            "hash": "d1d1e87bc7cff043ce5a57fa240b7a5f066a2c906df9f64f004851f78bc0c0a1"
+        }
+    ],
+    "hashType": "sha256"
+}

@@ -1,14 +1,13 @@
-
 {
   "expo": {
     "name": "Makubang",
-    "slug": "makubang-mobile",
+    "slug": "makubang",
     "version": "1.0.0",
     "orientation": "portrait",
     "icon": "./assets/icon.png",
-    "userInterfaceStyle": "light",
+    "userInterfaceStyle": "automatic",
     "splash": {
-      "image": "./assets/icon.png",
+      "image": "./assets/splash.png",
       "resizeMode": "contain",
       "backgroundColor": "#ffffff"
     },
@@ -17,26 +16,37 @@
     ],
     "ios": {
       "supportsTablet": true,
-      "bundleIdentifier": "com.makubang.mobile"
+      "bundleIdentifier": "com.makubang.app"
     },
     "android": {
       "adaptiveIcon": {
-        "foregroundImage": "./assets/icon.png",
+        "foregroundImage": "./assets/adaptive-icon.png",
         "backgroundColor": "#ffffff"
       },
-      "package": "com.makubang.mobile"
+      "package": "com.makubang.app"
     },
     "web": {
-      "favicon": "./assets/icon.png",
-      "bundler": "metro",
-      "bundlerPort": 8081,
-      "pwa": false
+      "favicon": "./assets/favicon.png"
     },
     "plugins": [
-      "expo-router"
+      "expo-router",
+      [
+        "expo-camera",
+        {
+          "cameraPermission": "Allow Makubang to access your camera to record food videos and take photos."
+        }
+      ],
+      [
+        "expo-location",
+        {
+          "locationAlwaysAndWhenInUsePermission": "Allow Makubang to use your location for food delivery tracking."
+        }
+      ],
+      "expo-av",
+      "expo-secure-store",
+      "expo-blur",
+      "expo-haptics"
     ],
-    "experiments": {
-      "typedRoutes": true
-    }
+    "scheme": "makubang"
   }
 }

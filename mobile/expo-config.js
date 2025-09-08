@@ -1,7 +1,7 @@
 
 import { ExpoConfig } from 'expo/config';
 
-const config: ExpoConfig = {
+const config = {
   name: 'Makubang',
   slug: 'makubang-food-app',
   version: '1.0.0',

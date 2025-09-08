@@ -1,6 +1,16 @@
 import { Router, Application } from 'express';
 import authRoutes from './auth.routes.js';
 import orderRoutes from './order.routes.js';
+import socialRoutes from './social.routes.js';
+import paymentRoutes from './payment.routes.js';
+import feedRoutes from './feed.routes.js';
+import engagementRoutes from './engagement.routes.js';
+import deliveryRoutes from './delivery.routes.js';
+import dashboardRoutes from './dashboard.routes.js';
+import razorpayCheckoutRoutes from './razorpay-checkout.routes.js';
+import deliveryPartnerRoutes from './delivery-partner.routes.js';
+import adminModerationRoutes from './admin-moderation.routes.js';
+import creatorRoutes from './creator.routes.js';
 import notificationRoutes from './notificationRoutes.js';
 import { OrderController } from '../controllers/order.controller';
 import { OrderUpdateService } from '../services/order-update.service';
@@ -18,6 +28,16 @@ export const registerRoutes = (app: Application) => {
   router.use('/auth', authRoutes);
   router.use('/orders', orderRoutes(orderController));
   router.use('/notifications', notificationRoutes);
+  router.use('/social', socialRoutes);
+  router.use('/payments', paymentRoutes);
+  router.use('/feed', feedRoutes);
+  router.use('/engagement', engagementRoutes);
+  router.use('/delivery', deliveryRoutes);
+  router.use('/dashboard', dashboardRoutes);
+  router.use('/payments', razorpayCheckoutRoutes);
+  router.use('/delivery-partners', deliveryPartnerRoutes);
+  router.use('/admin/moderation', adminModerationRoutes);
+  router.use('/creator', creatorRoutes);
 
   // API prefix
   app.use('/api', router);
@@ -32,6 +52,13 @@ export const registerRoutes = (app: Application) => {
         auth: '/api/auth',
         orders: '/api/orders',
         notifications: '/api/notifications',
+        social: '/api/social',
+        payments: '/api/payments',
+        feed: '/api/feed',
+        engagement: '/api/engagement',
+        delivery: '/api/delivery',
+        dashboard: '/api/dashboard',
+        deliveryPartners: '/api/delivery-partners',
         websocket: '/ws'
       }
     });

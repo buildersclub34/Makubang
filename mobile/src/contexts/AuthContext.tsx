@@ -13,7 +13,7 @@ interface AuthContextType {
   isLoading: boolean;
   login: (email: string, password: string) => Promise<void>;
   logout: () => void;
-  register: (email: string, password: string, name: string) => Promise<void>;
+  register: (userData: { email: string; password: string; name: string; phone?: string }) => Promise<void>;
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
@@ -76,14 +76,15 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
     }
   };
 
-  const register = async (email: string, password: string, name: string) => {
+  const register = async (userData: { email: string; password: string; name: string; phone?: string }) => {
+    const { email, password, name, phone } = userData;
     try {
       setIsLoading(true);
       // API call to register
       const response = await fetch('/api/auth/register', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ email, password, name })
+        body: JSON.stringify({ email, password, name, phone })
       });
       
       if (response.ok) {

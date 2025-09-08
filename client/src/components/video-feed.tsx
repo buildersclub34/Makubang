@@ -1,6 +1,7 @@
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useState, useRef, useEffect } from "react";
 import VideoCard from "./video-card";
+import CommentsPanel from "./comments-panel";
 import OrderModal from "./order-modal";
 import NotificationPopup from "./notification-popup";
 import { apiRequest } from "@/lib/queryClient";
@@ -15,13 +16,14 @@ export default function VideoFeed() {
   const [showNotification, setShowNotification] = useState(false);
   const videoRefs = useRef<(HTMLDivElement | null)[]>([]);
 
-  const { data: videos = [], isLoading } = useQuery({
-    queryKey: ["/api/videos"],
+  const { data: feed = { items: [] }, isLoading } = useQuery({
+    queryKey: ["/api/feed/personalized"],
     queryFn: async () => {
-      const response = await fetch("/api/videos");
+      const response = await fetch("/api/feed/personalized", { credentials: "include" });
       return response.json();
     },
   });
+  const videos = feed?.items || [];
 
   const recordViewMutation = useMutation({
     mutationFn: async ({ videoId, restaurantId, watchTime }: any) => {
@@ -34,13 +36,11 @@ export default function VideoFeed() {
   });
 
   const likeMutation = useMutation({
-    mutationFn: async ({ videoId, restaurantId }: any) => {
-      return apiRequest("POST", `/api/videos/${videoId}/like`, {
-        restaurantId,
-      });
+    mutationFn: async ({ videoId }: any) => {
+      return apiRequest("POST", `/api/engagement/videos/${videoId}/like`);
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["/api/videos"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/feed/personalized"] });
     },
   });
 
@@ -81,10 +81,7 @@ export default function VideoFeed() {
   }, [currentVideoIndex, videos, user, recordViewMutation]);
 
   const handleLike = (video: any) => {
-    likeMutation.mutate({
-      videoId: video.id,
-      restaurantId: video.restaurantId,
-    });
+    likeMutation.mutate({ videoId: video._id || video.id });
   };
 
   const handleOrder = (video: any) => {
@@ -116,7 +113,7 @@ export default function VideoFeed() {
       <div className="max-w-md mx-auto">
         {videos.map((video: any, index: number) => (
           <div
-            key={video.id}
+            key={video._id || video.id}
             ref={(el) => (videoRefs.current[index] = el)}
             className="mb-4"
           >
@@ -127,6 +124,7 @@ export default function VideoFeed() {
               isActive={index === currentVideoIndex}
             />
           </div>
+          <CommentsPanel videoId={video._id || video.id} />
         ))}
       </div>
 

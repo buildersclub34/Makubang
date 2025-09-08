@@ -1,88 +1,132 @@
+import { createBrowserRouter, RouterProvider } from 'react-router-dom';
+import { useAuth } from '@/contexts/AuthContext';
 
-import { createBrowserRouter, RouterProvider } from "react-router-dom";
-import Home from "@/pages/home";
-import Landing from "@/pages/landing";
-import NotFound from "@/pages/not-found";
-import UserProfile from "@/pages/user-profile";
-import RestaurantProfile from "@/pages/restaurant-profile";
-import CreatorProfile from "@/pages/creator-profile";
-import DeliveryPartner from "@/pages/delivery-partner";
-import Subscription from "@/pages/subscription";
-import AdminDashboard from "@/pages/admin-dashboard";
-import RestaurantDashboard from "@/pages/restaurant-dashboard";
-import OrderTracking from "@/pages/order-tracking";
-import Search from "@/pages/search";
-import CreateContent from "@/pages/create-content";
-import CreatorMarketplace from "@/pages/creator-marketplace";
-import InventoryManagement from "@/pages/inventory-management";
-import Settings from "@/pages/settings";
-import MobileApp from "@/pages/mobile-app";
+// Layout components
+import RootLayout from '@/components/layout/root-layout';
+import ProtectedRoute from '@/components/protected-route';
+
+// Pages
+import Home from '@/pages/home';
+import Login from '@/pages/login';
+import Register from '@/pages/register';
+import Profile from '@/pages/profile';
+import RestaurantDashboard from '@/pages/restaurant-dashboard';
+import AdminDashboard from '@/pages/admin-dashboard';
+import InfluencerDashboard from '@/pages/influencer-dashboard';
+import AdminContentModeration from '@/pages/admin-content-moderation';
+import CreatorStudio from '@/pages/creator-studio';
+import CreatorProfile from '@/pages/creator-profile';
+import CreatorMarketplace from '@/pages/creator-marketplace';
+import CreateContent from '@/pages/create-content';
+import OrderHistory from '@/pages/order-history';
+import Settings from '@/pages/settings';
 
 const router = createBrowserRouter([
   {
-    path: "/",
-    element: <Landing />,
-    errorElement: <NotFound />,
-  },
-  {
-    path: "/home",
-    element: <Home />,
-  },
-  {
-    path: "/profile",
-    element: <UserProfile />,
-  },
-  {
-    path: "/restaurant/:id",
-    element: <RestaurantProfile />,
-  },
-  {
-    path: "/creator/:id",
-    element: <CreatorProfile />,
-  },
-  {
-    path: "/delivery-partner",
-    element: <DeliveryPartner />,
-  },
-  {
-    path: "/subscription",
-    element: <Subscription />,
-  },
-  {
-    path: "/admin",
-    element: <AdminDashboard />,
-  },
-  {
-    path: "/restaurant-dashboard",
-    element: <RestaurantDashboard />,
-  },
-  {
-    path: "/order/:id",
-    element: <OrderTracking />,
-  },
-  {
-    path: "/search",
-    element: <Search />,
-  },
-  {
-    path: "/create",
-    element: <CreateContent />,
-  },
-  {
-    path: "/marketplace",
-    element: <CreatorMarketplace />,
-  },
-  {
-    path: "/inventory",
-    element: <InventoryManagement />,
-  },
-  {
-    path: "/settings",
-    element: <Settings />,
-  },
-  {
-    path: "/mobile",
-    element: <MobileApp />,
+    path: '/',
+    element: <RootLayout />,
+    children: [
+      {
+        index: true,
+        element: <Home />,
+      },
+      {
+        path: 'login',
+        element: <Login />,
+      },
+      {
+        path: 'register',
+        element: <Register />,
+      },
+      {
+        path: 'profile',
+        element: (
+          <ProtectedRoute>
+            <Profile />
+          </ProtectedRoute>
+        ),
+      },
+      {
+        path: 'restaurant',
+        element: (
+          <ProtectedRoute roles={['restaurant', 'admin']}>
+            <RestaurantDashboard />
+          </ProtectedRoute>
+        ),
+      },
+      {
+        path: 'admin',
+        element: (
+          <ProtectedRoute roles={['admin']}>
+            <AdminDashboard />
+          </ProtectedRoute>
+        ),
+      },
+      {
+        path: 'admin/moderation',
+        element: (
+          <ProtectedRoute roles={['admin']}>
+            <AdminContentModeration />
+          </ProtectedRoute>
+        ),
+      },
+      {
+        path: 'influencer',
+        element: (
+          <ProtectedRoute roles={['influencer', 'admin']}>
+            <InfluencerDashboard />
+          </ProtectedRoute>
+        ),
+      },
+      {
+        path: 'creator',
+        element: (
+          <ProtectedRoute roles={['creator', 'influencer', 'admin']}>
+            <CreatorStudio />
+          </ProtectedRoute>
+        ),
+      },
+      {
+        path: 'creator/profile',
+        element: (
+          <ProtectedRoute>
+            <CreatorProfile />
+          </ProtectedRoute>
+        ),
+      },
+      {
+        path: 'creator/marketplace',
+        element: (
+          <ProtectedRoute>
+            <CreatorMarketplace />
+          </ProtectedRoute>
+        ),
+      },
+      {
+        path: 'create',
+        element: (
+          <ProtectedRoute>
+            <CreateContent />
+          </ProtectedRoute>
+        ),
+      },
+      {
+        path: 'orders',
+        element: (
+          <ProtectedRoute>
+            <OrderHistory />
+          </ProtectedRoute>
+        ),
+      },
+      {
+        path: 'settings',
+        element: (
+          <ProtectedRoute>
+            <Settings />
+          </ProtectedRoute>
+        ),
+      },
+    ],
   },
 ]);
 

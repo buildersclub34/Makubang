@@ -1,49 +1,45 @@
-import 'react-native-gesture-handler';
-import { StatusBar } from 'expo-status-bar';
-import { SafeAreaProvider } from 'react-native-safe-area-context';
-import { Provider as PaperProvider } from 'react-native-paper';
-import { Provider as StoreProvider } from 'react-redux';
-import { PersistGate } from 'redux-persist/integration/react';
+import React from 'react';
 import { NavigationContainer } from '@react-navigation/native';
-import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
+import { PaperProvider } from 'react-native-paper';
+import { StatusBar } from 'expo-status-bar';
+import { GestureHandlerRootView } from 'react-native-gesture-handler';
+
+// Contexts
 import { AuthProvider } from './src/contexts/AuthContext';
-import { Slot } from 'expo-router';
-import useCachedResources from './src/hooks/useCachedResources';
+import { CartProvider } from './src/contexts/CartContext';
+import { WebSocketProvider } from './src/contexts/WebSocketContext';
+
+// Navigation
 import Navigation from './src/navigation';
-import { store, persistor } from './src/store';
-import { NotificationProvider } from './src/contexts/NotificationContext';
-import theme from './src/theme';
 
-const queryClient = new QueryClient();
+// Create query client
+const queryClient = new QueryClient({
+  defaultOptions: {
+    queries: {
+      staleTime: 5 * 60 * 1000, // 5 minutes
+      gcTime: 10 * 60 * 1000, // 10 minutes
+    },
+  },
+});
 
-const App = () => {
-  const isLoadingComplete = useCachedResources();
-
-  if (!isLoadingComplete) {
-    return null;
-  }
-
+export default function App() {
   return (
     <GestureHandlerRootView style={{ flex: 1 }}>
-      <StoreProvider store={store}>
-        <PersistGate loading={null} persistor={persistor}>
-          <PaperProvider theme={theme}>
-            <SafeAreaProvider>
-              <AuthProvider>
-                <NotificationProvider>
-                  <NavigationContainer>
-                    <Navigation />
-                  </NavigationContainer>
+      <QueryClientProvider client={queryClient}>
+        <PaperProvider>
+          <AuthProvider>
+            <CartProvider>
+              <WebSocketProvider>
+                <NavigationContainer>
                   <StatusBar style="auto" />
-                </NotificationProvider>
-              </AuthProvider>
-            </SafeAreaProvider>
-          </PaperProvider>
-        </PersistGate>
-      </StoreProvider>
+                  <Navigation />
+                </NavigationContainer>
+              </WebSocketProvider>
+            </CartProvider>
+          </AuthProvider>
+        </PaperProvider>
+      </QueryClientProvider>
     </GestureHandlerRootView>
   );
-};
-
-export default App;
+}

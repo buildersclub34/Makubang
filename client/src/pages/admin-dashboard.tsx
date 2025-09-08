@@ -1,3 +1,48 @@
+import React, { useEffect, useState } from 'react';
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+
+export default function AdminDashboard() {
+  const [data, setData] = useState<any>(null);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    (async () => {
+      try {
+        const res = await fetch('/api/dashboard/admin/summary', { credentials: 'include' });
+        if (res.ok) setData(await res.json());
+      } finally {
+        setLoading(false);
+      }
+    })();
+  }, []);
+
+  if (loading) return <div className="p-6">Loading…</div>;
+
+  return (
+    <div className="max-w-5xl mx-auto p-6 grid grid-cols-1 md:grid-cols-3 gap-4">
+      <Card>
+        <CardHeader><CardTitle>Users</CardTitle></CardHeader>
+        <CardContent><div className="text-3xl font-bold">{data?.users || 0}</div></CardContent>
+      </Card>
+      <Card>
+        <CardHeader><CardTitle>Restaurants</CardTitle></CardHeader>
+        <CardContent><div className="text-3xl font-bold">{data?.restaurants || 0}</div></CardContent>
+      </Card>
+      <Card>
+        <CardHeader><CardTitle>Videos</CardTitle></CardHeader>
+        <CardContent><div className="text-3xl font-bold">{data?.videos || 0}</div></CardContent>
+      </Card>
+      <Card className="md:col-span-3">
+        <CardHeader><CardTitle>Orders</CardTitle></CardHeader>
+        <CardContent>
+          <div className="text-xl">Count: {data?.orders?.count || 0}</div>
+          <div className="text-xl">Revenue: ₹{data?.orders?.revenue || 0}</div>
+        </CardContent>
+      </Card>
+    </div>
+  );
+}
+
 import { useQuery } from "@tanstack/react-query";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";

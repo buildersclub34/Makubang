@@ -167,12 +167,11 @@ export function SocialFeatures({ currentUserId, className }: SocialFeaturesProps
 
   const handleFollowToggle = async (userId: string) => {
     try {
-      // API call to toggle follow status
-      setFollowers(prev => prev.map(user => 
-        user.id === userId 
-          ? { ...user, isFollowing: !user.isFollowing }
-          : user
-      ));
+      const target = followers.find(u => u.id === userId) || following.find(u => u.id === userId);
+      const method = target?.isFollowing ? 'DELETE' : 'POST';
+      await fetch(`/api/social/${userId}/follow`, { method, credentials: 'include' });
+      setFollowers(prev => prev.map(user => user.id === userId ? { ...user, isFollowing: !user.isFollowing } : user));
+      setFollowing(prev => prev.map(user => user.id === userId ? { ...user, isFollowing: !user.isFollowing } : user));
     } catch (error) {
       console.error('Follow toggle failed:', error);
     }

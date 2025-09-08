@@ -1,304 +1,322 @@
+# Makubang - Food Discovery & Ordering Platform
 
-# Makubang - Content-First Food Discovery Platform
+A content-first, shoppable food video platform where users scroll through Instagram-style reels, discover food, follow friends/influencers/restaurants, and instantly order dishes with integrated payment and delivery tracking.
 
-Makubang is a revolutionary food discovery platform that combines short-form video content with direct food ordering, ML-powered personalized recommendations, and a comprehensive creator marketplace.
+## 🌟 Features
 
-## 🚀 Features
+### User Experience
+- **Instagram-style Feed**: Vertical video scrolling with food content
+- **Swipe Gestures**: Slide left to add to cart, slide right for instant buy
+- **Social Features**: Follow friends, restaurants, and influencers
+- **Real-time Engagement**: Like, comment, and share videos
+- **Personalized Recommendations**: AI-powered content discovery
 
-### Core Platform
-- **Instagram/TikTok-style video feed** for food content
-- **Direct ordering** from videos with seamless checkout
-- **ML-powered personalized recommendations** based on user behavior
-- **Real-time notifications** for orders, content, and engagement
-- **Multi-role support**: Users, Creators, Restaurants, Delivery Partners, Admins
+### Ordering & Payments
+- **Instant Ordering**: Quick order from video feed
+- **Cart Management**: Add multiple items and checkout
+- **Razorpay Integration**: Secure payments with UPI, cards, wallets
+- **GST Calculations**: Automatic tax calculations and invoicing
+- **Order Tracking**: Real-time delivery updates
 
-### Content & Discovery
-- **AI content moderation** for safe, high-quality content
-- **Trending algorithm** with real-time engagement tracking
-- **Location-based recommendations** for nearby restaurants
-- **Advanced search & filters** by cuisine, price, dietary preferences
-- **Social features**: likes, comments, shares, follows
+### Delivery System
+- **In-house Delivery**: Own delivery partner network
+- **Live Tracking**: GPS-based real-time location updates
+- **OTP Verification**: Secure pickup and delivery confirmation
+- **Earnings Dashboard**: Partner earnings and payout tracking
 
-### Ordering & Delivery
-- **Subscription-based restaurant model** (₹1,000 starter plan)
-- **Integrated payment gateway** with Stripe
-- **Delivery partner network** with real-time tracking
-- **GST calculation** and invoice generation
-- **Order analytics** for restaurants and creators
+### Restaurant Management
+- **Menu Management**: Full CRUD operations for menu items
+- **Subscription Plans**: Starter/Pro/Unlimited tiers with order limits
+- **Analytics Dashboard**: Performance metrics and insights
+- **Order Management**: Real-time order processing
 
-### Creator Marketplace
-- **Revenue sharing** from video-driven orders
-- **Sponsored content opportunities** with brands
-- **Creator analytics dashboard** with engagement metrics
-- **Milestone notifications** for followers, views, earnings
-- **Content performance insights** and optimization tips
-
-### Analytics & Insights
-- **Real-time platform metrics** for admins
-- **Restaurant analytics**: orders, revenue, peak hours, top dishes
-- **Creator analytics**: video performance, earnings, audience insights
-- **User behavior tracking** for recommendation improvements
-- **A/B testing framework** for feature optimization
-
-### Administrative Tools
-- **Admin dashboard** with platform overview
-- **Content moderation tools** with automated flagging
-- **User management** with role-based permissions
-- **Financial reporting** and commission tracking
-- **System health monitoring** and performance metrics
+### Content & Moderation
+- **Video Processing**: HLS streaming with multiple resolutions
+- **Content Moderation**: Admin approval workflow
+- **Auto-flagging**: Community reporting system
+- **User Management**: Suspend/ban capabilities
 
 ## 🏗️ Architecture
 
-### Frontend (React TypeScript)
-- **Modern React** with TypeScript and Tailwind CSS
-- **Responsive design** for mobile-first experience
-- **Component library** with Shadcn/UI and Radix primitives
-- **State management** with TanStack Query for server state
-- **Real-time updates** with WebSocket connections
+### Backend Stack
+- **Node.js/Express**: REST API and WebSocket server
+- **MongoDB**: Primary database with geospatial indexes
+- **Redis**: Caching and session storage
+- **Socket.io**: Real-time communications
+- **FFmpeg**: Video processing and HLS streaming
 
-### Backend (Node.js + Express)
-- **RESTful API** with Express.js and TypeScript
-- **Database**: PostgreSQL with Drizzle ORM
-- **Authentication**: OpenID Connect with role-based access
-- **File storage**: Cloudinary for images and videos
-- **Payment processing**: Stripe integration
-
-### Machine Learning
-- **Recommendation engine** with collaborative and content-based filtering
-- **Content moderation** using OpenAI's moderation API
-- **Trending algorithm** with engagement scoring
-- **User behavior analysis** for personalization
-
-### Delivery Partner App
-- **Separate React Native app** for delivery partners
-- **Real-time order tracking** with GPS integration
-- **Earnings dashboard** with daily/weekly reports
-- **Push notifications** for new orders and updates
-
-## 📱 Mobile Apps
-
-### User App (Web-based)
-- Progressive Web App (PWA) for cross-platform compatibility
-- Native-like experience with offline capabilities
-- Push notifications for orders and content updates
-
-### Delivery Partner App (React Native)
-- Native iOS and Android apps
-- Real-time location tracking
-- Optimized for delivery workflows
-- Offline-first architecture for poor connectivity areas
-
-## 🛠️ Technology Stack
-
-### Frontend
-- React 18 with TypeScript
-- Tailwind CSS for styling
-- Vite for build tooling
-- TanStack Query for data fetching
-- Wouter for routing
-
-### Backend
-- Node.js with Express.js
-- TypeScript for type safety
-- PostgreSQL with Drizzle ORM
-- Stripe for payments
-- Cloudinary for media storage
-
-### Machine Learning
-- Python with scikit-learn
-- OpenAI API for content moderation
-- Custom recommendation algorithms
-- Real-time analytics processing
+### Frontend Stack
+- **React**: Main web application
+- **React Native**: Mobile apps (User + Delivery Partner)
+- **TailwindCSS**: Styling framework
+- **HLS.js**: Video streaming player
+- **React Query**: State management and caching
 
 ### Infrastructure
-- Docker for containerization
-- Redis for caching and sessions
-- WebSocket for real-time updates
-- CDN for media delivery
+- **Docker**: Containerized deployment
+- **Nginx**: Load balancer and reverse proxy
+- **MinIO**: S3-compatible object storage
+- **MongoDB Atlas**: Cloud database option
 
-## 🚀 Getting Started
+## 🚀 Quick Start
 
 ### Prerequisites
 - Node.js 18+
-- PostgreSQL 14+
-- Redis (optional, for caching)
+- Docker & Docker Compose
+- MongoDB (local or Atlas)
+- Redis (local or cloud)
 
-### Installation
+### Development Setup
 
 1. **Clone the repository**
 ```bash
-git clone <repository-url>
+git clone https://github.com/your-org/makubang.git
 cd makubang
 ```
 
 2. **Install dependencies**
 ```bash
+npm run install:all
+```
+
+3. **Environment Setup**
+```bash
+# Copy environment files
+cp server/.env.example server/.env
+cp client/.env.example client/.env
+
+# Update with your credentials:
+# - MongoDB connection string
+# - Redis URL
+# - Razorpay keys
+# - AWS/S3 credentials
+# - JWT secrets
+```
+
+4. **Start with Docker Compose**
+```bash
+cd server
+docker-compose up -d
+```
+
+5. **Start development servers**
+```bash
+# Backend
+npm run dev:backend
+
+# Frontend
+cd client && npm run dev
+
+# Mobile (optional)
+npm run dev:mobile
+npm run dev:delivery
+```
+
+### Manual Setup (without Docker)
+
+1. **Start required services**
+```bash
+# MongoDB
+mongod --dbpath /path/to/data
+
+# Redis
+redis-server
+```
+
+2. **Setup database**
+```bash
+# Import initial data
+mongoimport --db makubang --collection subscription_plans --file server/data/plans.json
+```
+
+3. **Start application**
+```bash
+# Backend
+cd server && npm run dev
+
+# Frontend
+cd client && npm run dev
+```
+
+## 📱 Mobile Apps
+
+### User App (React Native)
+```bash
+cd mobile
 npm install
+npm start
 ```
 
-3. **Set up environment variables**
-```bash
-# Copy example environment file
-cp .env.example .env
-
-# Update with your configuration:
-# - Database connection string
-# - Stripe API keys
-# - Cloudinary credentials
-# - OpenAI API key
-# - Push notification keys
-```
-
-4. **Set up the database**
-```bash
-# Run database migrations
-npm run db:migrate
-
-# Seed initial data
-npm run db:seed
-```
-
-5. **Start the development server**
-```bash
-npm run dev
-```
-
-The application will be available at `http://localhost:5000`
-
-### Setting up Delivery Partner App
-
-1. **Navigate to delivery app directory**
+### Delivery Partner App
 ```bash
 cd delivery-app
-```
-
-2. **Install dependencies**
-```bash
 npm install
+npm start
 ```
 
-3. **Start the mobile app**
-```bash
-# For iOS
-npm run ios
+## 🛠️ Configuration
 
-# For Android
-npm run android
+### Environment Variables
 
-# For web
-npm run web
+#### Server (.env)
+```env
+NODE_ENV=development
+PORT=5000
+MONGODB_URI=mongodb://localhost:27017/makubang
+REDIS_URL=redis://localhost:6379
+JWT_SECRET=your-secret-key
+
+# Razorpay
+RAZORPAY_KEY_ID=your_key_id
+RAZORPAY_KEY_SECRET=your_key_secret
+RAZORPAY_WEBHOOK_SECRET=your_webhook_secret
+
+# AWS/S3
+AWS_REGION=us-east-1
+AWS_ACCESS_KEY_ID=your_access_key
+AWS_SECRET_ACCESS_KEY=your_secret_key
+S3_BUCKET_NAME=makubang-videos
+CDN_URL=https://your-cdn.com
+
+# External APIs
+CLIENT_URL=http://localhost:3000
+```
+
+#### Client (.env)
+```env
+VITE_API_URL=http://localhost:5000/api
+VITE_WS_URL=ws://localhost:5000
+VITE_RAZORPAY_KEY_ID=your_key_id
 ```
 
 ## 📊 API Documentation
 
 ### Authentication
-All protected endpoints require authentication via JWT token.
-
-### Main Endpoints
-
-#### Videos
-- `GET /api/videos` - Get video feed (supports personalized/trending)
-- `POST /api/videos` - Upload new video (with content moderation)
-- `GET /api/videos/:id` - Get specific video details
-- `POST /api/videos/:id/like` - Like/unlike video
-- `POST /api/videos/:id/comment` - Add comment
-
-#### Orders
-- `POST /api/orders` - Create new order
-- `GET /api/orders` - Get user's orders
-- `GET /api/orders/:id` - Get order details
-- `PATCH /api/orders/:id/status` - Update order status
-
-#### Analytics
-- `GET /api/analytics/video/:id` - Video performance analytics
-- `GET /api/analytics/restaurant/:id` - Restaurant analytics
-- `GET /api/analytics/creator/:id` - Creator analytics
-- `GET /api/analytics/platform` - Platform-wide analytics (admin only)
-
-#### Recommendations
-- `GET /api/recommendations/personalized` - Personalized video recommendations
-- `GET /api/recommendations/trending` - Trending videos
-
-### Webhook Endpoints
-- `POST /webhooks/stripe` - Stripe payment webhooks
-- `POST /webhooks/delivery` - Delivery partner status updates
-
-## 🔧 Configuration
-
-### Environment Variables
-
 ```bash
-# Database
-DATABASE_URL=postgresql://username:password@localhost:5432/makubang
-
-# Authentication
-JWT_SECRET=your-jwt-secret
-REPLIT_AUTH_CLIENT_ID=your-replit-auth-client-id
-
-# Payment Gateway
-STRIPE_SECRET_KEY=sk_test_...
-STRIPE_WEBHOOK_SECRET=whsec_...
-
-# File Storage
-CLOUDINARY_CLOUD_NAME=your-cloud-name
-CLOUDINARY_API_KEY=your-api-key
-CLOUDINARY_API_SECRET=your-api-secret
-
-# AI/ML Services
-OPENAI_API_KEY=sk-...
-
-# Push Notifications
-EXPO_ACCESS_TOKEN=your-expo-token
-
-# External APIs
-GOOGLE_MAPS_API_KEY=your-maps-key
-SMS_API_KEY=your-sms-api-key
-EMAIL_API_KEY=your-email-api-key
+POST /api/auth/register
+POST /api/auth/login
+POST /api/auth/logout
+GET  /api/auth/me
 ```
 
-## 📈 Deployment
-
-### Production Deployment on Replit
-
-1. **Set up environment variables** in Replit Secrets
-2. **Configure database** with connection pooling
-3. **Set up CDN** for media files
-4. **Enable monitoring** and logging
-
+### Content & Feed
 ```bash
-# Build for production
-npm run build
-
-# Start production server
-npm start
+GET  /api/feed/personalized
+GET  /api/feed/explore
+GET  /api/feed/trending
+POST /api/videos/upload
+GET  /api/videos/:id
 ```
 
-### Scaling Considerations
-
-- **Database**: Use read replicas for analytics queries
-- **Caching**: Implement Redis for frequently accessed data
-- **CDN**: Use Cloudinary or AWS CloudFront for media
-- **Load Balancing**: Use multiple server instances
-- **Monitoring**: Implement comprehensive logging and alerting
-
-## 🧪 Testing
-
-### Running Tests
+### Social Features
 ```bash
-# Run all tests
-npm test
+POST   /api/social/:userId/follow
+DELETE /api/social/:userId/follow
+GET    /api/social/:userId/counters
+```
 
-# Run specific test suites
-npm run test:unit
-npm run test:integration
+### Engagement
+```bash
+POST   /api/engagement/videos/:id/like
+DELETE /api/engagement/videos/:id/like
+POST   /api/engagement/videos/:id/comments
+GET    /api/engagement/videos/:id/comments
+```
+
+### Orders & Payments
+```bash
+POST /api/payments/create-order
+POST /api/payments/verify-payment
+GET  /api/orders
+GET  /api/orders/:id
+```
+
+### Delivery Partner
+```bash
+POST /api/delivery-partners/register
+POST /api/delivery-partners/status
+POST /api/delivery-partners/assignments/:id/accept
+POST /api/delivery-partners/assignments/:id/verify-pickup
+```
+
+### Admin & Moderation
+```bash
+GET  /api/admin/moderation/pending
+POST /api/admin/moderation/videos/:id/approve
+POST /api/admin/moderation/videos/:id/reject
+GET  /api/admin/moderation/stats
+```
+
+## 🔧 Development
+
+### Code Structure
+```
+├── server/                 # Backend API
+│   ├── controllers/        # Route controllers
+│   ├── models/            # Database models
+│   ├── routes/            # API routes
+│   ├── services/          # Business logic
+│   ├── middleware/        # Express middleware
+│   └── lib/               # Utilities
+├── client/                # React web app
+│   ├── src/
+│   │   ├── components/    # Reusable components
+│   │   ├── pages/         # Route pages
+│   │   ├── hooks/         # Custom hooks
+│   │   └── lib/           # Utilities
+├── mobile/                # React Native user app
+├── delivery-app/          # React Native delivery app
+└── shared/                # Shared types and schemas
+```
+
+### Testing
+```bash
+# Backend tests
+cd server && npm test
+
+# Frontend tests
+cd client && npm test
+
+# E2E tests
 npm run test:e2e
 ```
 
-### Test Coverage
-- Unit tests for business logic
-- Integration tests for API endpoints
-- End-to-end tests for user workflows
-- Performance tests for scalability
+### Deployment
+
+#### Production Build
+```bash
+npm run build
+```
+
+#### Docker Production
+```bash
+docker-compose -f docker-compose.prod.yml up -d
+```
+
+#### Environment-specific Deployments
+```bash
+# Staging
+npm run deploy:staging
+
+# Production
+npm run deploy:production
+```
+
+## 🔐 Security
+
+- **Authentication**: JWT tokens with refresh mechanism
+- **Authorization**: Role-based access control (RBAC)
+- **Payment Security**: Razorpay signature verification
+- **Data Validation**: Input sanitization and validation
+- **Rate Limiting**: API endpoint protection
+- **HTTPS**: SSL/TLS encryption in production
+
+## 📈 Monitoring
+
+- **Health Checks**: `/health` endpoint
+- **Logging**: Winston with daily rotation
+- **Metrics**: Custom analytics dashboard
+- **Error Tracking**: Centralized error logging
 
 ## 🤝 Contributing
 
@@ -308,61 +326,32 @@ npm run test:e2e
 4. Push to the branch (`git push origin feature/amazing-feature`)
 5. Open a Pull Request
 
-### Code Style
-- Use TypeScript for type safety
-- Follow ESLint configuration
-- Write tests for new features
-- Document API changes
-
 ## 📄 License
 
-This project is licensed under the MIT License - see the [LICENSE.md](LICENSE.md) file for details.
+This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
 
 ## 🆘 Support
 
 - **Documentation**: [docs.makubang.com](https://docs.makubang.com)
-- **API Reference**: [api.makubang.com](https://api.makubang.com)
-- **Community**: [Discord Server](https://discord.gg/makubang)
+- **Issues**: GitHub Issues
+- **Discord**: [Makubang Community](https://discord.gg/makubang)
 - **Email**: support@makubang.com
 
-## 🗺️ Roadmap
+## 🎯 Roadmap
 
-### Phase 1 (Current)
-- ✅ Core video feed and ordering
-- ✅ Basic recommendation engine
-- ✅ Payment integration
-- ✅ Delivery partner app
+- [ ] **Phase 1**: HSR Layout Bangalore pilot
+- [ ] **Phase 2**: Bangalore city-wide expansion
+- [ ] **Phase 3**: Multi-city rollout
+- [ ] **Phase 4**: Advanced AI recommendations
+- [ ] **Phase 5**: B2B restaurant solutions
 
-### Phase 2 (Q2 2024)
-- 🔄 Advanced ML recommendations
-- 🔄 Creator marketplace
-- 🔄 Content moderation AI
-- 🔄 Real-time analytics
+## 🙏 Acknowledgments
 
-### Phase 3 (Q3 2024)
-- 📋 Live streaming features
-- 📋 AR food filters
-- 📋 Voice ordering
-- 📋 International expansion
-
-### Phase 4 (Q4 2024)
-- 📋 IoT kitchen integration
-- 📋 Blockchain loyalty program
-- 📋 AI-powered cooking assistant
-- 📋 Virtual restaurant concepts
-
-## 🏆 Achievements
-
-- **500K+ Users** within first 6 months
-- **1M+ Orders** processed successfully
-- **99.9% Uptime** with robust infrastructure
-- **4.8/5 Rating** on app stores
-- **Featured** in Tech Crunch, Forbes, and Economic Times
+- Razorpay for payment processing
+- MongoDB for database solutions
+- React Native community
+- All our early adopters and contributors
 
 ---
 
-Built with ❤️ by the Makubang team. Transforming how people discover and order food through the power of video content and AI.
-#   M a k u b a n g  
- #   M a k u b a n g  
- #   M a k u b a n g  
- 
+**Built with ❤️ by the Makubang Team**

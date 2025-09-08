@@ -11,8 +11,7 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
 // Load environment variables
-import dotenv from 'dotenv';
-dotenv.config();
+import './lib/dotenv-config.js';
 
 // MongoDB Connection
 import { connectDB, getDB } from './lib/mongodb';

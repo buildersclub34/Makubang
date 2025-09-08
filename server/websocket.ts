@@ -1,6 +1,6 @@
 import { Server, Socket } from 'socket.io';
 import jwt from 'jsonwebtoken';
-import { getDatabase } from './db-mongo';
+import { getDB } from './db-mongo';
 import { WebSocketService } from './lib/websocket/WebSocketService';
 import { ObjectId } from 'mongodb';
 
@@ -25,7 +25,7 @@ export function setupWebSocket(io: Server) {
       }
 
       const decoded = jwt.verify(token, JWT_SECRET) as any;
-      const db = await getDatabase();
+      const db = await getDB();
       
       // Verify user exists and is active
       const user = await db.collection('users').findOne(

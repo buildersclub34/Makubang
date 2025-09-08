@@ -101,11 +101,22 @@ export default function RestaurantDashboard() {
         setOrders(ordersData);
       }
 
-      // Fetch analytics
-      const analyticsResponse = await fetch('/api/restaurant/analytics');
+      // Fetch analytics (summary)
+      const analyticsResponse = await fetch('/api/dashboard/restaurant/summary', { credentials: 'include' });
       if (analyticsResponse.ok) {
         const analyticsData = await analyticsResponse.json();
-        setAnalytics(analyticsData);
+        setAnalytics({
+          totalOrders: (analyticsData?.orders || []).reduce((acc: number, r: any) => acc + (r.count || 0), 0),
+          totalRevenue: (analyticsData?.orders || []).reduce((acc: number, r: any) => acc + (r.revenue || 0), 0),
+          averageOrderValue: 0,
+          rating: 0,
+          ordersToday: 0,
+          revenueToday: 0,
+          popularItems: [],
+          hourlyOrders: [],
+          dailyRevenue: [],
+          categoryDistribution: [],
+        });
       }
 
     } catch (error) {

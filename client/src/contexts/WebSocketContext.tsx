@@ -2,10 +2,11 @@ import React, { createContext, useContext, useEffect, useRef, useCallback, React
 import { useAuth } from './AuthContext';
 import { useSnackbar } from 'notistack';
 import { useQueryClient } from 'react-query';
+import { io, Socket } from 'socket.io-client';
 
 type WebSocketMessage = {
   type: string;
-  data: any;
+  data?: any;
 };
 
 type WebSocketContextType = {
@@ -21,7 +22,7 @@ export const WebSocketProvider: React.FC<{ children: ReactNode }> = ({ children 
   const { enqueueSnackbar } = useSnackbar();
   const queryClient = useQueryClient();
   
-  const ws = useRef<WebSocket | null>(null);
+  const socketRef = useRef<Socket | null>(null);
   const reconnectAttempts = useRef(0);
   const maxReconnectAttempts = 5;
   const reconnectTimeout = useRef<NodeJS.Timeout | null>(null);
@@ -29,30 +30,24 @@ export const WebSocketProvider: React.FC<{ children: ReactNode }> = ({ children 
   const messageQueue = useRef<WebSocketMessage[]>([]);
   
   // WebSocket event handlers
-  const handleOpen = useCallback(() => {
-    console.log('WebSocket connected');
+  const handleConnect = useCallback(() => {
+    console.log('Socket.IO connected');
     isConnected.current = true;
     reconnectAttempts.current = 0;
-    
-    // Authenticate with the server
-    if (token) {
-      ws.current?.send(JSON.stringify({
-        type: 'authenticate',
-        token,
-      }));
-    }
-    
-    // Process any queued messages
-    while (messageQueue.current.length > 0 && ws.current?.readyState === WebSocket.OPEN) {
-      const message = messageQueue.current.shift();
-      if (message) {
-        ws.current.send(JSON.stringify(message));
+
+    // Process any queued messages as emits
+    if (socketRef.current) {
+      while (messageQueue.current.length > 0) {
+        const message = messageQueue.current.shift();
+        if (message) {
+          socketRef.current.emit(message.type, message.data);
+        }
       }
     }
-  }, [token]);
+  }, []);
   
-  const handleClose = useCallback((event: CloseEvent) => {
-    console.log('WebSocket disconnected:', event.code, event.reason);
+  const handleDisconnect = useCallback((reason?: string) => {
+    console.log('Socket.IO disconnected:', reason || 'unknown');
     isConnected.current = false;
     
     // Attempt to reconnect if we're still authenticated
@@ -67,88 +62,69 @@ export const WebSocketProvider: React.FC<{ children: ReactNode }> = ({ children 
     }
   }, [isAuthenticated]);
   
-  const handleMessage = useCallback((event: MessageEvent) => {
-    try {
-      const message: WebSocketMessage = JSON.parse(event.data);
-      console.log('WebSocket message received:', message);
-      
-      switch (message.type) {
-        case 'ORDER_STATUS_UPDATE':
-          // Invalidate and refetch orders query
-          queryClient.invalidateQueries(['orders']);
-          queryClient.invalidateQueries(['order', message.data.orderId]);
-          
-          // Show notification
-          enqueueSnackbar(`Order #${message.data.orderId} status updated to ${message.data.status}`, {
-            variant: 'info',
-          });
-          break;
-          
-        case 'NEW_ORDER':
-          // Invalidate orders list for restaurant
-          if (user?.role === 'restaurant' || user?.role === 'admin') {
-            queryClient.invalidateQueries(['restaurant-orders']);
-            
-            // Show notification
-            enqueueSnackbar(`New order received: #${message.data.orderNumber}`, {
-              variant: 'success',
-            });
-          }
-          break;
-          
-        case 'DELIVERY_LOCATION_UPDATE':
-          // Update delivery location in the UI
-          queryClient.setQueryData(
-            ['order', message.data.orderId],
-            (oldData: any) => ({
-              ...oldData,
-              deliveryLocation: message.data.location,
-            })
-          );
-          break;
-          
-        case 'NOTIFICATION':
-          // Show notification
-          enqueueSnackbar(message.data.message, {
-            variant: message.data.severity || 'info',
-          });
-          break;
-          
-        default:
-          console.log('Unhandled message type:', message.type);
+  // Socket event listeners for known events
+  const registerSocketEventHandlers = useCallback(() => {
+    const socket = socketRef.current;
+    if (!socket) return;
+
+    socket.on('order_status_changed', (data: { orderId: string; status: string }) => {
+      queryClient.invalidateQueries(['orders']);
+      queryClient.invalidateQueries(['order', data.orderId]);
+      enqueueSnackbar(`Order #${data.orderId} status updated to ${data.status}`, { variant: 'info' });
+    });
+
+    socket.on('order_update', (update: { orderId: string; status?: string; [k: string]: any }) => {
+      if (update?.orderId) {
+        queryClient.invalidateQueries(['order', update.orderId]);
       }
-    } catch (error) {
-      console.error('Error processing WebSocket message:', error);
-    }
+    });
+
+    socket.on('delivery_location', (data: { orderId: string; lat: number; lng: number }) => {
+      queryClient.setQueryData(
+        ['order', data.orderId],
+        (oldData: any) => ({
+          ...oldData,
+          deliveryLocation: { lat: data.lat, lng: data.lng },
+        })
+      );
+    });
+
+    socket.on('new_order', (data: { orderNumber: string }) => {
+      if (user?.role === 'restaurant' || user?.role === 'admin') {
+        queryClient.invalidateQueries(['restaurant-orders']);
+        enqueueSnackbar(`New order received: #${data.orderNumber}`, { variant: 'success' });
+      }
+    });
+
+    socket.on('notification', (data: { message: string; severity?: 'info' | 'success' | 'warning' | 'error' }) => {
+      enqueueSnackbar(data.message, { variant: data.severity || 'info' });
+    });
   }, [enqueueSnackbar, queryClient, user?.role]);
   
-  const handleError = useCallback((error: Event) => {
-    console.error('WebSocket error:', error);
+  const handleError = useCallback((error: any) => {
+    console.error('Socket.IO error:', error);
   }, []);
   
   // Connect to WebSocket server
   const connect = useCallback(() => {
-    if (ws.current) {
-      // Clean up existing connection
-      ws.current.onopen = null;
-      ws.current.onclose = null;
-      ws.current.onmessage = null;
-      ws.current.onerror = null;
-      
-      if (ws.current.readyState === WebSocket.OPEN) {
-        ws.current.close();
-      }
+    if (socketRef.current) {
+      socketRef.current.off();
+      socketRef.current.disconnect();
     }
-    
-    const wsUrl = process.env.NEXT_PUBLIC_WS_URL || `ws://localhost:5000`;
-    ws.current = new WebSocket(wsUrl);
-    
-    // Set up event listeners
-    ws.current.onopen = handleOpen;
-    ws.current.onclose = handleClose;
-    ws.current.onmessage = handleMessage;
-    ws.current.onerror = handleError;
-  }, [handleOpen, handleClose, handleMessage, handleError]);
+
+    const wsUrl = process.env.NEXT_PUBLIC_WS_URL || `http://localhost:5000`;
+    socketRef.current = io(wsUrl, {
+      transports: ['websocket'],
+      auth: token ? { token } : undefined,
+      autoConnect: true,
+      reconnection: false, // we'll implement our own backoff
+    });
+
+    socketRef.current.on('connect', handleConnect);
+    socketRef.current.on('disconnect', handleDisconnect);
+    socketRef.current.on('connect_error', handleError);
+    registerSocketEventHandlers();
+  }, [handleConnect, handleDisconnect, handleError, registerSocketEventHandlers, token]);
   
   // Initialize WebSocket connection when authenticated
   useEffect(() => {
@@ -158,8 +134,9 @@ export const WebSocketProvider: React.FC<{ children: ReactNode }> = ({ children 
     
     // Clean up on unmount
     return () => {
-      if (ws.current) {
-        ws.current.close();
+      if (socketRef.current) {
+        socketRef.current.off();
+        socketRef.current.disconnect();
       }
       
       if (reconnectTimeout.current) {
@@ -170,36 +147,31 @@ export const WebSocketProvider: React.FC<{ children: ReactNode }> = ({ children 
   
   // Reconnect when token changes
   useEffect(() => {
-    if (isAuthenticated && token && ws.current) {
-      // If we already have a connection, re-authenticate
-      if (ws.current.readyState === WebSocket.OPEN) {
-        ws.current.send(JSON.stringify({
-          type: 'authenticate',
-          token,
-        }));
-      } else {
-        // Otherwise, reconnect
-        connect();
-      }
+    if (isAuthenticated && token) {
+      connect();
     }
   }, [token, isAuthenticated, connect]);
   
   // Send a message through the WebSocket connection
   const sendMessage = useCallback((message: WebSocketMessage) => {
-    if (ws.current?.readyState === WebSocket.OPEN) {
-      ws.current.send(JSON.stringify(message));
-    } else {
-      // Queue the message if we're not connected yet
-      messageQueue.current.push(message);
+    const socket = socketRef.current;
+    if (socket && socket.connected) {
+      socket.emit(message.type, message.data);
+      return;
     }
+    // Queue the message if we're not connected yet
+    messageQueue.current.push(message);
   }, []);
   
   // Subscribe to order updates
   const subscribeToOrder = useCallback((orderId: string) => {
-    sendMessage({
-      type: 'subscribe_order',
-      orderId,
-    });
+    const socket = socketRef.current;
+    if (socket && socket.connected) {
+      socket.emit('track_order', orderId);
+    } else {
+      // Queue as a generic message for when connected
+      messageQueue.current.push({ type: 'track_order', data: orderId });
+    }
   }, [sendMessage]);
   
   const value = {

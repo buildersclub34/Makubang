@@ -13,33 +13,43 @@ export const theme = {
     success: colors.success,
     warning: colors.warning,
     error: colors.error,
-    info: colors.info
+    info: colors.info,
+    neon: {
+      green: '#00FF88',
+      blue: '#00A3FF',
+      pink: '#FF3EA5',
+    }
   },
   spacing: {
     xs: 4,
     sm: 8,
     md: 16,
     lg: 24,
-    xl: 32
+    xl: 32,
+    xxl: 40
   },
   typography: {
-    fontSize: {
+    sizes: {
       xs: 12,
       sm: 14,
       md: 16,
       lg: 18,
-      xl: 24
+      xl: 24,
+      xxl: 28,
+      xxxl: 32,
     },
-    fontWeight: {
+    weights: {
       normal: '400',
       medium: '500',
+      semibold: '600',
       bold: '700'
     }
   },
   borderRadius: {
     sm: 4,
     md: 8,
-    lg: 12
+    lg: 12,
+    full: 999
   }
 };
 

@@ -1,74 +1,76 @@
-
 import React from 'react';
-import { View, StyleSheet, ActivityIndicator } from 'react-native';
 import { NavigationContainer } from '@react-navigation/native';
-import { createNativeStackNavigator } from '@react-navigation/native-stack';
+import { createStackNavigator } from '@react-navigation/stack';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { SafeAreaProvider } from 'react-native-safe-area-context';
-import Icon from 'react-native-vector-icons/MaterialIcons';
+import { StatusBar } from 'expo-status-bar';
+import { GestureHandlerRootView } from 'react-native-gesture-handler';
+import { Ionicons } from '@expo/vector-icons';
 
-import { AuthProvider, useAuth } from './src/context/AuthContext';
-import { LocationProvider } from './src/context/LocationContext';
+// Contexts
+import { AuthProvider, useAuth } from './src/contexts/AuthContext';
+import { LocationProvider } from './src/contexts/LocationContext';
+import { WebSocketProvider } from './src/contexts/WebSocketContext';
 
-// Import screens
+// Screens
 import LoginScreen from './src/screens/LoginScreen';
 import DashboardScreen from './src/screens/DashboardScreen';
+import OrderAcceptanceScreen from './src/screens/OrderAcceptanceScreen';
 import LiveMapScreen from './src/screens/LiveMapScreen';
-import WalletScreen from './src/screens/WalletScreen';
-import OrderHistoryScreen from './src/screens/OrderHistoryScreen';
+import EarningsScreen from './src/screens/EarningsScreen';
 import ProfileScreen from './src/screens/ProfileScreen';
 
-const Stack = createNativeStackNavigator();
+const Stack = createStackNavigator();
 const Tab = createBottomTabNavigator();
-const queryClient = new QueryClient();
+
+// Create query client
+const queryClient = new QueryClient({
+  defaultOptions: {
+    queries: {
+      staleTime: 5 * 60 * 1000, // 5 minutes
+      cacheTime: 10 * 60 * 1000, // 10 minutes
+    },
+  },
+});
 
 function DeliveryPartnerTabs() {
   return (
     <Tab.Navigator
       screenOptions={({ route }) => ({
         tabBarIcon: ({ focused, color, size }) => {
-          let iconName;
+          let iconName: keyof typeof Ionicons.glyphMap;
 
           switch (route.name) {
             case 'Dashboard':
-              iconName = 'dashboard';
+              iconName = 'home';
+              break;
+            case 'Orders':
+              iconName = 'list';
               break;
             case 'Map':
               iconName = 'map';
               break;
-            case 'Wallet':
-              iconName = 'account-balance-wallet';
-              break;
-            case 'History':
-              iconName = 'history';
+            case 'Earnings':
+              iconName = 'wallet';
               break;
             case 'Profile':
               iconName = 'person';
               break;
             default:
-              iconName = 'dashboard';
+              iconName = 'ellipse';
           }
 
-          return <Icon name={iconName} size={size} color={color} />;
+          return <Ionicons name={iconName} size={size} color={color} />;
         },
         tabBarActiveTintColor: '#4CAF50',
-        tabBarInactiveTintColor: '#757575',
-        tabBarStyle: {
-          backgroundColor: '#fff',
-          borderTopWidth: 1,
-          borderTopColor: '#e0e0e0',
-          height: 60,
-          paddingBottom: 8,
-          paddingTop: 8,
-        },
+        tabBarInactiveTintColor: '#666',
         headerShown: false,
       })}
     >
       <Tab.Screen name="Dashboard" component={DashboardScreen} />
+      <Tab.Screen name="Orders" component={OrderAcceptanceScreen} />
       <Tab.Screen name="Map" component={LiveMapScreen} />
-      <Tab.Screen name="Wallet" component={WalletScreen} />
-      <Tab.Screen name="History" component={OrderHistoryScreen} />
+      <Tab.Screen name="Earnings" component={EarningsScreen} />
       <Tab.Screen name="Profile" component={ProfileScreen} />
     </Tab.Navigator>
   );
@@ -78,11 +80,7 @@ function AppNavigator() {
   const { isAuthenticated, isLoading } = useAuth();
 
   if (isLoading) {
-    return (
-      <View style={styles.loadingContainer}>
-        <ActivityIndicator size="large" color="#4CAF50" />
-      </View>
-    );
+    return null; // Show loading screen
   }
 
   return (
@@ -100,23 +98,17 @@ function AppNavigator() {
 
 export default function App() {
   return (
-    <QueryClientProvider client={queryClient}>
-      <SafeAreaProvider>
+    <GestureHandlerRootView style={{ flex: 1 }}>
+      <QueryClientProvider client={queryClient}>
         <AuthProvider>
           <LocationProvider>
-            <AppNavigator />
+            <WebSocketProvider>
+              <StatusBar style="auto" />
+              <AppNavigator />
+            </WebSocketProvider>
           </LocationProvider>
         </AuthProvider>
-      </SafeAreaProvider>
-    </QueryClientProvider>
+      </QueryClientProvider>
+    </GestureHandlerRootView>
   );
 }
-
-const styles = StyleSheet.create({
-  loadingContainer: {
-    flex: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
-    backgroundColor: '#1A1A1A',
-  },
-});

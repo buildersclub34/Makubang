@@ -16,17 +16,10 @@ import NotificationsScreen from '../screens/NotificationsScreen';
 import { useTheme } from 'react-native-paper';
 
 // Types
-export type RootStackParamList = {
-  MainTabs: undefined;
-  VideoDetail: { videoId: string };
-  Restaurant: { restaurantId: string };
-  Checkout: { restaurantId: string };
-  OrderTracking: { orderId: string };
-  Notifications: undefined;
-};
+import { RootStackParamList, RootTabParamList } from './types';
 
 const Stack = createNativeStackNavigator<RootStackParamList>();
-const Tab = createBottomTabNavigator();
+const Tab = createBottomTabNavigator<RootTabParamList>();
 
 const MainTabs = () => {
   const theme = useTheme();

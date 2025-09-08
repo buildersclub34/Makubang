@@ -30,7 +30,7 @@ export default function ProfileScreen() {
 
   return (
     <LinearGradient
-      colors={[theme.colors.background.primary, theme.colors.background.secondary]}
+      colors={[theme.colors.background, theme.colors.surface]}
       style={styles.container}
     >
       <ScrollView style={styles.scrollView} showsVerticalScrollIndicator={false}>
@@ -87,7 +87,7 @@ export default function ProfileScreen() {
                   <Ionicons
                     name="chevron-forward"
                     size={20}
-                    color={theme.colors.text.secondary}
+                    color={theme.colors.textSecondary}
                   />
                 </View>
               </LinearGradient>
@@ -101,7 +101,7 @@ export default function ProfileScreen() {
               colors={[theme.colors.neon.pink, '#FF4444']}
               style={styles.logoutGradient}
             >
-              <Ionicons name="log-out-outline" size={24} color={theme.colors.text.primary} />
+              <Ionicons name="log-out-outline" size={24} color={theme.colors.text} />
               <Text style={styles.logoutText}>Logout</Text>
             </LinearGradient>
           </TouchableOpacity>
@@ -139,27 +139,27 @@ const styles = StyleSheet.create({
     width: 120,
     height: 120,
     borderRadius: 60,
-    backgroundColor: theme.colors.surface.primary,
+    backgroundColor: theme.colors.surface,
   },
   userName: {
     fontSize: theme.typography.sizes.xxl,
-    fontWeight: theme.typography.weights.bold,
-    color: theme.colors.text.primary,
+    fontWeight: '700',
+    color: theme.colors.text,
     marginBottom: theme.spacing.xs,
   },
   userEmail: {
     fontSize: theme.typography.sizes.md,
-    color: theme.colors.text.secondary,
+    color: theme.colors.textSecondary,
     marginBottom: theme.spacing.lg,
   },
   statsContainer: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: theme.colors.surface.primary,
+    backgroundColor: theme.colors.surface,
     borderRadius: theme.borderRadius.lg,
     padding: theme.spacing.md,
     borderWidth: 1,
-    borderColor: theme.colors.border.primary,
+    borderColor: theme.colors.border,
   },
   statItem: {
     alignItems: 'center',
@@ -167,18 +167,18 @@ const styles = StyleSheet.create({
   },
   statNumber: {
     fontSize: theme.typography.sizes.lg,
-    fontWeight: theme.typography.weights.bold,
+    fontWeight: '700',
     color: theme.colors.neon.green,
   },
   statLabel: {
     fontSize: theme.typography.sizes.sm,
-    color: theme.colors.text.secondary,
+    color: theme.colors.textSecondary,
     marginTop: theme.spacing.xs,
   },
   statDivider: {
     width: 1,
     height: 30,
-    backgroundColor: theme.colors.border.primary,
+    backgroundColor: theme.colors.border,
     marginHorizontal: theme.spacing.md,
   },
   menuContainer: {
@@ -192,7 +192,7 @@ const styles = StyleSheet.create({
   },
   menuItemGradient: {
     borderWidth: 1,
-    borderColor: theme.colors.border.primary,
+    borderColor: theme.colors.border,
     borderRadius: theme.borderRadius.lg,
   },
   menuItemContent: {
@@ -209,15 +209,15 @@ const styles = StyleSheet.create({
     width: 40,
     height: 40,
     borderRadius: 20,
-    backgroundColor: theme.colors.surface.secondary,
+    backgroundColor: theme.colors.surface,
     justifyContent: 'center',
     alignItems: 'center',
     marginRight: theme.spacing.md,
   },
   menuItemText: {
     fontSize: theme.typography.sizes.md,
-    color: theme.colors.text.primary,
-    fontWeight: theme.typography.weights.medium,
+    color: theme.colors.text,
+    fontWeight: '500',
   },
   logoutContainer: {
     paddingHorizontal: theme.spacing.lg,
@@ -236,8 +236,8 @@ const styles = StyleSheet.create({
   },
   logoutText: {
     fontSize: theme.typography.sizes.md,
-    fontWeight: theme.typography.weights.semibold,
-    color: theme.colors.text.primary,
+    fontWeight: '600',
+    color: theme.colors.text,
   },
   footer: {
     alignItems: 'center',
@@ -246,11 +246,11 @@ const styles = StyleSheet.create({
   },
   footerText: {
     fontSize: theme.typography.sizes.sm,
-    color: theme.colors.text.secondary,
+    color: theme.colors.textSecondary,
   },
   footerSubtext: {
     fontSize: theme.typography.sizes.sm,
-    color: theme.colors.text.secondary,
+    color: theme.colors.textSecondary,
     marginTop: theme.spacing.xs,
   },
 });

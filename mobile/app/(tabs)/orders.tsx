@@ -67,7 +67,7 @@ export default function OrdersScreen() {
       case 'cancelled':
         return '#FF4444';
       default:
-        return theme.colors.text.secondary;
+        return theme.colors.textSecondary;
     }
   };
 
@@ -103,7 +103,7 @@ export default function OrdersScreen() {
 
   return (
     <LinearGradient
-      colors={[theme.colors.background.primary, theme.colors.background.secondary]}
+      colors={[theme.colors.background, theme.colors.surface]}
       style={styles.container}
     >
       <ScrollView

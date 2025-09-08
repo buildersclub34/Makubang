@@ -1,0 +1,106 @@
+version: '3.8'
+
+services:
+  # MongoDB
+  mongodb:
+    image: mongo:7
+    container_name: makubang-mongodb
+    ports:
+      - "27017:27017"
+    environment:
+      MONGO_INITDB_ROOT_USERNAME: makubang
+      MONGO_INITDB_ROOT_PASSWORD: makubang123
+      MONGO_INITDB_DATABASE: makubang
+    volumes:
+      - mongodb_data:/data/db
+      - ./init-mongo.js:/docker-entrypoint-initdb.d/init-mongo.js:ro
+    networks:
+      - makubang-network
+
+  # Redis
+  redis:
+    image: redis:7-alpine
+    container_name: makubang-redis
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    command: redis-server --appendonly yes
+    networks:
+      - makubang-network
+
+  # MinIO (S3-compatible storage)
+  minio:
+    image: minio/minio:latest
+    container_name: makubang-minio
+    ports:
+      - "9000:9000"
+      - "9001:9001"
+    environment:
+      MINIO_ROOT_USER: makubang
+      MINIO_ROOT_PASSWORD: makubang123
+    volumes:
+      - minio_data:/data
+    command: server /data --console-address ":9001"
+    networks:
+      - makubang-network
+
+  # Backend API
+  api:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: makubang-api
+    ports:
+      - "5000:5000"
+    environment:
+      NODE_ENV: development
+      PORT: 5000
+      MONGODB_URI: mongodb://makubang:makubang123@mongodb:27017/makubang?authSource=admin
+      REDIS_URL: redis://redis:6379
+      JWT_SECRET: your-super-secret-jwt-key-change-in-production
+      RAZORPAY_KEY_ID: your_razorpay_key_id
+      RAZORPAY_KEY_SECRET: your_razorpay_key_secret
+      RAZORPAY_WEBHOOK_SECRET: your_webhook_secret
+      AWS_REGION: us-east-1
+      AWS_ACCESS_KEY_ID: makubang
+      AWS_SECRET_ACCESS_KEY: makubang123
+      S3_BUCKET_NAME: makubang-videos
+      S3_URL: http://minio:9000
+      CDN_URL: http://localhost:9000
+      CLIENT_URL: http://localhost:3000
+    volumes:
+      - ./uploads:/app/uploads
+      - ./temp:/app/temp
+    depends_on:
+      - mongodb
+      - redis
+      - minio
+    networks:
+      - makubang-network
+    restart: unless-stopped
+
+  # Nginx (Load balancer/Reverse proxy)
+  nginx:
+    image: nginx:alpine
+    container_name: makubang-nginx
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./nginx.conf:/etc/nginx/nginx.conf:ro
+      - ./ssl:/etc/nginx/ssl:ro
+    depends_on:
+      - api
+    networks:
+      - makubang-network
+    restart: unless-stopped
+
+volumes:
+  mongodb_data:
+  redis_data:
+  minio_data:
+
+networks:
+  makubang-network:
+    driver: bridge
